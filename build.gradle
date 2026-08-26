@@ -1,0 +1,52 @@
+import java.util.Locale
+
+plugins { id 'application' }
+
+repositories { mavenCentral() }
+
+def javafxVersion = '25.0.2'
+def osName = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+def architecture = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+def arm64 = architecture.contains('aarch64') || architecture.contains('arm64')
+def javafxPlatform = osName.contains('mac') ? (arm64 ? 'mac-aarch64' : 'mac') :
+        (osName.contains('win') ? 'win' : (arm64 ? 'linux-aarch64' : 'linux'))
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-Xlint:deprecation,unchecked', '-Werror'])
+}
+
+dependencies {
+    implementation "org.openjfx:javafx-base:${javafxVersion}:${javafxPlatform}"
+    implementation "org.openjfx:javafx-graphics:${javafxVersion}:${javafxPlatform}"
+    implementation "org.openjfx:javafx-controls:${javafxVersion}:${javafxPlatform}"
+}
+
+application { mainClass = 'teamsync.TeamSyncLauncher' }
+
+def java25 = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(25)
+}
+
+tasks.named('run', JavaExec) {
+    javaLauncher = java25
+}
+
+tasks.named('test') {
+    failOnNoDiscoveredTests = false
+}
+
+tasks.register('selfTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs TeamSync dependency-free regression checks.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'teamsync.TeamSyncSelfTest'
+    javaLauncher = java25
+}
