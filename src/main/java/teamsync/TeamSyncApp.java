@@ -1,201 +1,342 @@
 package teamsync;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.List;
-import javax.swing.BorderFactory;
-import javax.swing.JButton;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTable;
-import javax.swing.JTextArea;
-import javax.swing.JTextField;
-import javax.swing.SwingConstants;
-import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
-import javax.swing.border.TitledBorder;
-import javax.swing.table.DefaultTableModel;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.beans.binding.Bindings;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.concurrent.Task;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.DatePicker;
+import javafx.scene.control.Label;
+import javafx.scene.control.Spinner;
+import javafx.scene.control.SpinnerValueFactory;
+import javafx.scene.control.OverrunStyle;
+import javafx.scene.control.TableCell;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
 
-/** Swing entry point for TeamSync's attendance-aware duty roster MVP. */
-public final class TeamSyncApp extends JFrame {
+/** JavaFX entry point for TeamSync's attendance-aware duty roster. */
+public final class TeamSyncApp extends Application {
+    private static final String APP_TITLE = "TeamSync";
+
     private final WorkspaceStore workspaceStore = new WorkspaceStore();
     private final AttendanceService attendanceService = new AttendanceService();
     private final RosterService rosterService = new RosterService();
     private final Workspace workspace = workspaceStore.load();
+    private final ObservableList<Duty> duties = FXCollections.observableArrayList();
 
-    private final JTextField sheetUrlField = new JTextField(48);
-    private final JTextField dateField = new JTextField(10);
-    private final JTextField dutyNameField = new JTextField(20);
-    private final JTextField peopleNeededField = new JTextField("1", 4);
-    private final JLabel attendanceStatus = new JLabel("No attendance loaded");
-    private final JLabel workspaceStatus = new JLabel("Not linked");
-    private final JTextArea rosterArea = new JTextArea();
-    private final DefaultTableModel dutyTableModel = new DefaultTableModel(new String[] {"Duty", "People needed"}, 0) {
-        @Override public boolean isCellEditable(int row, int column) { return false; }
-    };
-    private final JTable dutyTable = new JTable(dutyTableModel);
+    private final Label pageTitle = new Label();
+    private final Label pageSubtitle = new Label();
+    private final Label connectionStatus = new Label();
+    private final Label attendanceStatus = new Label();
+    private final Label overviewStatus = new Label();
+    private final TextField sheetUrlField = new TextField();
+    private final DatePicker datePicker = new DatePicker();
+    private final TextField dutyNameField = new TextField();
+    private final Spinner<Integer> peopleNeededSpinner = new Spinner<>();
+    private final TableView<Duty> dutyTable = new TableView<>();
+    private final TextArea rosterArea = new TextArea();
 
-    public TeamSyncApp() {
-        super("TeamSync - Team Operations");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setMinimumSize(new Dimension(950, 650));
-        setSize(1050, 720);
-        setLocationByPlatform(true);
-        buildInterface();
-        refreshView();
-        addWindowListener(new WindowAdapter() { @Override public void windowClosing(WindowEvent event) { saveWorkspace(); } });
+    private final StackPane content = new StackPane();
+    private final Button overviewNav = navButton("Overview");
+    private final Button attendanceNav = navButton("Attendance");
+    private final Button dutiesNav = navButton("Duties");
+    private final Button rosterNav = navButton("Roster");
+
+    @Override
+    public void start(Stage stage) {
+        BorderPane root = new BorderPane();
+        root.getStyleClass().add("app-shell");
+        root.setTop(buildTopBar());
+        root.setLeft(buildNavigation());
+        javafx.scene.control.ScrollPane contentScroll = new javafx.scene.control.ScrollPane(content);
+        contentScroll.setFitToWidth(true);
+        contentScroll.getStyleClass().add("content-scroll");
+        root.setCenter(contentScroll);
+
+        duties.setAll(workspace.duties());
+        refreshWorkspaceDetails();
+        showOverview();
+
+        Scene scene = new Scene(root, 1120, 720);
+        scene.getStylesheets().add(TeamSyncApp.class.getResource("/teamsync/theme.css").toExternalForm());
+        stage.setTitle(APP_TITLE + " - Manage your team effortlessly");
+        stage.setMinWidth(640);
+        stage.setMinHeight(480);
+        stage.setScene(scene);
+        stage.show();
     }
 
-    private void buildInterface() {
-        JPanel root = new JPanel(new BorderLayout(16, 16));
-        root.setBorder(BorderFactory.createEmptyBorder(20, 24, 24, 24));
-        root.setBackground(new Color(247, 248, 245));
-        root.add(header(), BorderLayout.NORTH);
+    @Override
+    public void stop() { saveWorkspace(); }
 
-        JSplitPane content = new JSplitPane(JSplitPane.VERTICAL_SPLIT, workspacePanel(), rosterPanel());
-        content.setBorder(null);
-        content.setResizeWeight(0.62);
-        root.add(content, BorderLayout.CENTER);
-        setContentPane(root);
+    private HBox buildTopBar() {
+        Label product = new Label(APP_TITLE);
+        product.getStyleClass().add("product-name");
+        Label subtitle = new Label("Team operations");
+        subtitle.getStyleClass().add("topbar-subtitle");
+        VBox brand = new VBox(0, product, subtitle);
+        brand.setAlignment(Pos.CENTER_LEFT);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        connectionStatus.getStyleClass().addAll("status-pill", "status-neutral");
+        return styledBox("top-bar", 18, brand, spacer, connectionStatus);
     }
 
-    private JPanel header() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setOpaque(false);
-        JLabel title = new JLabel("TeamSync");
-        title.setFont(title.getFont().deriveFont(Font.BOLD, 27f));
-        JLabel subtitle = new JLabel("Attendance-aware training duty rosters");
-        subtitle.setForeground(new Color(88, 98, 106));
-        JPanel words = new JPanel(new BorderLayout()); words.setOpaque(false); words.add(title, BorderLayout.NORTH); words.add(subtitle, BorderLayout.SOUTH);
-        panel.add(words, BorderLayout.WEST);
-        workspaceStatus.setHorizontalAlignment(SwingConstants.RIGHT);
-        workspaceStatus.setForeground(new Color(35, 99, 67));
-        panel.add(workspaceStatus, BorderLayout.EAST);
-        return panel;
+    private VBox buildNavigation() {
+        overviewNav.setOnAction(event -> showOverview());
+        attendanceNav.setOnAction(event -> showAttendance());
+        dutiesNav.setOnAction(event -> showDuties());
+        rosterNav.setOnAction(event -> showRoster());
+        Label navigationLabel = new Label("WORKSPACE");
+        navigationLabel.getStyleClass().add("navigation-label");
+        VBox navigation = new VBox(8, navigationLabel, overviewNav, attendanceNav, dutiesNav, rosterNav);
+        navigation.getStyleClass().add("navigation");
+        navigation.setPadding(new Insets(24, 14, 24, 14));
+        return navigation;
     }
 
-    private JPanel workspacePanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(titledBorder("1. Link attendance and manage duties"));
-        GridBagConstraints c = constraints();
+    private void showOverview() {
+        selectNavigation(overviewNav);
+        setPageHeading("Overview", "Your team operations at a glance");
+        Label heading = new Label("Get your roster ready");
+        heading.setWrapText(true);
+        heading.getStyleClass().add("section-heading");
+        Label explanation = new Label("Start with attendance, define the duties, then generate a fair roster.");
+        explanation.setWrapText(true);
+        explanation.getStyleClass().add("muted-text");
 
-        c.gridx = 0; c.gridy = 0; panel.add(new JLabel("Google Sheet URL"), c);
-        c.gridx = 1; c.weightx = 1; c.fill = GridBagConstraints.HORIZONTAL; panel.add(sheetUrlField, c);
-        JButton linkButton = new JButton("Link sheet"); linkButton.addActionListener(event -> linkSheet());
-        c.gridx = 2; c.weightx = 0; c.fill = GridBagConstraints.NONE; panel.add(linkButton, c);
-
-        c.gridx = 0; c.gridy = 1; panel.add(new JLabel("Training date (YYYY-MM-DD)"), c);
-        c.gridx = 1; c.fill = GridBagConstraints.HORIZONTAL; panel.add(dateField, c);
-        JButton loadButton = new JButton("Load attendance"); loadButton.addActionListener(event -> loadAttendance(loadButton));
-        c.gridx = 2; c.fill = GridBagConstraints.NONE; panel.add(loadButton, c);
-
-        c.gridx = 0; c.gridy = 2; c.gridwidth = 3; c.fill = GridBagConstraints.HORIZONTAL; panel.add(attendanceStatus, c);
-        c.gridwidth = 1;
-
-        c.gridx = 0; c.gridy = 3; c.gridwidth = 3; c.fill = GridBagConstraints.HORIZONTAL;
-        JLabel rule = new JLabel("Sheet format: first column 'Member'; date headers and attendance values of 1, 0.5, or 0. Only 1 is eligible.");
-        rule.setForeground(new Color(88, 98, 106)); panel.add(rule, c); c.gridwidth = 1;
-
-        c.gridx = 0; c.gridy = 4; c.gridwidth = 3; c.fill = GridBagConstraints.HORIZONTAL; c.insets = new Insets(18, 4, 4, 4);
-        panel.add(new JLabel("Duties"), c); c.gridwidth = 1; c.insets = new Insets(5, 4, 5, 4);
-
-        c.gridx = 0; c.gridy = 5; panel.add(new JLabel("Duty name"), c);
-        c.gridx = 1; c.fill = GridBagConstraints.HORIZONTAL; panel.add(dutyNameField, c);
-        c.gridx = 2; c.fill = GridBagConstraints.NONE; panel.add(new JLabel("People needed"), c);
-        c.gridx = 3; panel.add(peopleNeededField, c);
-
-        JPanel dutyActions = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        JButton add = new JButton("Add"); add.addActionListener(event -> addDuty());
-        JButton update = new JButton("Update selected"); update.addActionListener(event -> updateDuty());
-        JButton edit = new JButton("Load selected"); edit.addActionListener(event -> loadSelectedDuty());
-        JButton delete = new JButton("Delete selected"); delete.addActionListener(event -> deleteDuty());
-        dutyActions.add(add); dutyActions.add(update); dutyActions.add(edit); dutyActions.add(delete);
-        c.gridx = 0; c.gridy = 6; c.gridwidth = 4; c.fill = GridBagConstraints.HORIZONTAL; panel.add(dutyActions, c); c.gridwidth = 1;
-
-        JScrollPane tableScroll = new JScrollPane(dutyTable);
-        tableScroll.setPreferredSize(new Dimension(600, 155));
-        c.gridx = 0; c.gridy = 7; c.gridwidth = 4; c.weighty = 1; c.fill = GridBagConstraints.BOTH; panel.add(tableScroll, c);
-        return panel;
+        Button attendanceAction = new Button("Manage attendance");
+        attendanceAction.getStyleClass().add("primary-button");
+        attendanceAction.setOnAction(event -> showAttendance());
+        Button dutiesAction = new Button("Manage duties");
+        dutiesAction.getStyleClass().add("secondary-button");
+        dutiesAction.setOnAction(event -> showDuties());
+        Button rosterAction = new Button("Open roster");
+        rosterAction.getStyleClass().add("secondary-button");
+        rosterAction.setOnAction(event -> showRoster());
+        VBox attendanceCard = summaryCard("01", "Attendance", attendanceSummary(), attendanceAction);
+        VBox dutiesCard = summaryCard("02", "Duties", dutySummary(), dutiesAction);
+        VBox rosterCard = summaryCard("03", "Roster", rosterSummary(), rosterAction);
+        FlowPane cards = styledFlow("summary-cards", 16, attendanceCard, dutiesCard, rosterCard);
+        configureSummaryCardSizes(cards, attendanceCard, dutiesCard, rosterCard);
+        content.getChildren().setAll(pageContent(styledBox("overview-content", 20, heading, explanation, cards, overviewStatus)));
     }
 
-    private JPanel rosterPanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(titledBorder("2. Generate roster"));
-        JPanel top = new JPanel(new BorderLayout());
-        JLabel explanation = new JLabel("Each confirmed member receives one duty first. Repeats are allowed only when duty slots exceed attendees.");
-        explanation.setForeground(new Color(88, 98, 106)); top.add(explanation, BorderLayout.WEST);
-        JButton generate = new JButton("Generate duty roster"); generate.addActionListener(event -> generateRoster()); top.add(generate, BorderLayout.EAST);
-        panel.add(top, BorderLayout.NORTH);
-        rosterArea.setEditable(false); rosterArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13)); rosterArea.setText("Load attendance and add duties to generate a roster.");
-        panel.add(new JScrollPane(rosterArea), BorderLayout.CENTER);
-        return panel;
+    private void showAttendance() {
+        selectNavigation(attendanceNav);
+        setPageHeading("Attendance", "Link the shared sheet and load the selected session");
+        sheetUrlField.setText(workspace.sheetUrl());
+        datePicker.setValue(workspace.sessionDate());
+        sheetUrlField.setPromptText("Paste a Google Sheets URL");
+        HBox.setHgrow(sheetUrlField, Priority.ALWAYS);
+        Button link = new Button("Link sheet");
+        link.getStyleClass().add("secondary-button");
+        link.setOnAction(event -> linkSheet());
+        Button load = new Button("Load attendance");
+        load.getStyleClass().add("primary-button");
+        load.setOnAction(event -> loadAttendance(load));
+        Label formatHint = new Label("Sheet format: the first column is Member; date columns use YYYY-MM-DD; only attendance value 1 is selected for duties.");
+        formatHint.setWrapText(true);
+        formatHint.getStyleClass().add("help-text");
+        attendanceStatus.getStyleClass().setAll("status-message");
+        content.getChildren().setAll(pageContent(sectionCard("Attendance source",
+                styledBox("form-row", 12, sheetUrlField, link), "Session date",
+                styledBox("form-row", 12, datePicker, load), attendanceStatus, formatHint)));
+    }
+
+    private void showDuties() {
+        selectNavigation(dutiesNav);
+        setPageHeading("Duties", "Define the jobs that need coverage");
+        configureDutyTable();
+        dutyNameField.setPromptText("e.g. Equipment set-up");
+        peopleNeededSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 99, 1));
+        peopleNeededSpinner.setEditable(true);
+        Button add = new Button("Add duty");
+        add.getStyleClass().add("primary-button");
+        add.setOnAction(event -> addDuty());
+        Button update = new Button("Update selected");
+        update.getStyleClass().add("secondary-button");
+        update.setOnAction(event -> updateDuty());
+        Button delete = new Button("Delete selected");
+        delete.getStyleClass().add("danger-button");
+        delete.setOnAction(event -> deleteDuty());
+        HBox nameRow = styledBox("form-row", 12, dutyNameField, peopleNeededSpinner, add);
+        HBox.setHgrow(dutyNameField, Priority.ALWAYS);
+        HBox actions = styledBox("action-row", 10, update, delete);
+        VBox tableSection = new VBox(12, dutyTable, actions);
+        VBox.setVgrow(dutyTable, Priority.ALWAYS);
+        content.getChildren().setAll(pageContent(sectionCard("Add a duty", nameRow, "Current duties", tableSection)));
+    }
+
+    private void showRoster() {
+        selectNavigation(rosterNav);
+        setPageHeading("Roster", "Generate an attendance-aware and balanced assignment");
+        Button generate = new Button("Generate duty roster");
+        generate.getStyleClass().add("primary-button");
+        generate.setOnAction(event -> generateRoster());
+        Label rule = new Label("Confirmed members receive one duty before anyone is assigned a second duty.");
+        rule.setWrapText(true);
+        rule.getStyleClass().add("help-text");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox toolbar = styledBox("roster-toolbar", 12, rule, spacer, generate);
+        rosterArea.setEditable(false);
+        rosterArea.setWrapText(false);
+        rosterArea.getStyleClass().add("roster-output");
+        if (rosterArea.getText().isBlank()) rosterArea.setText("Load attendance and add duties to generate a roster.");
+        VBox rosterSection = new VBox(12, toolbar, rosterArea);
+        VBox.setVgrow(rosterArea, Priority.ALWAYS);
+        content.getChildren().setAll(pageContent(sectionCard("Duty roster", rosterSection)));
+    }
+
+    private VBox pageContent(Node body) {
+        VBox page = new VBox(22, pageTitle, pageSubtitle, body);
+        page.getStyleClass().add("page-content");
+        page.setPadding(new Insets(32));
+        VBox.setVgrow(body, Priority.ALWAYS);
+        return page;
+    }
+
+    private VBox sectionCard(String title, Object... contentNodes) {
+        VBox card = new VBox(14);
+        card.getStyleClass().add("content-card");
+        Label label = new Label(title);
+        label.getStyleClass().add("card-heading");
+        card.getChildren().add(label);
+        for (Object node : contentNodes) {
+            if (node instanceof String text) {
+                Label fieldLabel = new Label(text);
+                fieldLabel.getStyleClass().add("field-label");
+                card.getChildren().add(fieldLabel);
+            } else if (node instanceof Node child) card.getChildren().add(child);
+        }
+        VBox.setVgrow(card, Priority.ALWAYS);
+        return card;
+    }
+
+    private VBox summaryCard(String step, String title, String detail, Button action) {
+        Label number = new Label(step);
+        number.getStyleClass().add("step-number");
+        Label cardTitle = new Label(title);
+        cardTitle.getStyleClass().add("card-heading");
+        Label description = new Label(detail);
+        description.setWrapText(true);
+        description.getStyleClass().add("muted-text");
+        Region spacer = new Region();
+        VBox.setVgrow(spacer, Priority.ALWAYS);
+        VBox card = new VBox(12, number, cardTitle, description, spacer, action);
+        card.getStyleClass().add("summary-card");
+        card.setMinWidth(220);
+        return card;
+    }
+
+    private void configureDutyTable() {
+        if (!dutyTable.getColumns().isEmpty()) return;
+        TableColumn<Duty, String> name = new TableColumn<>("Duty");
+        name.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().name()));
+        name.setCellFactory(column -> wrappingCell());
+        TableColumn<Duty, Number> people = new TableColumn<>("People needed");
+        people.setCellValueFactory(cell -> new javafx.beans.property.SimpleIntegerProperty(cell.getValue().peopleNeeded()));
+        dutyTable.getColumns().setAll(List.of(name, people));
+        dutyTable.setItems(duties);
+        dutyTable.setPlaceholder(new Label("No duties yet. Add the first job above."));
+        dutyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_NEXT_COLUMN);
+        dutyTable.getSelectionModel().selectedItemProperty().addListener((observable, oldDuty, selectedDuty) -> {
+            if (selectedDuty != null) {
+                dutyNameField.setText(selectedDuty.name());
+                peopleNeededSpinner.getValueFactory().setValue(selectedDuty.peopleNeeded());
+            }
+        });
     }
 
     private void linkSheet() {
-        String url = sheetUrlField.getText().trim();
-        try { attendanceService.csvUri(url); }
-        catch (IllegalArgumentException error) { showError(error.getMessage()); return; }
-        workspace.setSheetUrl(url); saveWorkspace(); refreshView();
-        attendanceStatus.setText("Sheet linked. Choose a date and load attendance.");
+        try {
+            String url = sheetUrlField.getText().trim();
+            attendanceService.csvUri(url);
+            workspace.setSheetUrl(url);
+            saveWorkspace();
+            refreshWorkspaceDetails();
+            attendanceStatus.setText("Sheet linked. Choose a date and load attendance.");
+        } catch (IllegalArgumentException error) { showError(error.getMessage()); }
     }
 
-    private void loadAttendance(JButton loadButton) {
-        LocalDate date;
-        try { date = LocalDate.parse(dateField.getText().trim()); }
-        catch (DateTimeParseException error) { showError("Enter a date in YYYY-MM-DD format."); return; }
+    private void loadAttendance(Button loadButton) {
+        LocalDate date = datePicker.getValue();
+        if (date == null) { showError("Choose a session date."); return; }
         if (workspace.sheetUrl().isBlank()) { showError("Link a Google Sheet before loading attendance."); return; }
-        loadButton.setEnabled(false); attendanceStatus.setText("Loading attendance from Google Sheets...");
-        new SwingWorker<List<AttendanceRecord>, Void>() {
-            @Override protected List<AttendanceRecord> doInBackground() throws Exception { return attendanceService.loadAttendance(workspace.sheetUrl(), date); }
-            @Override protected void done() {
-                loadButton.setEnabled(true);
-                try {
-                    workspace.setSessionDate(date); workspace.setAttendance(get()); saveWorkspace(); refreshView();
-                    attendanceStatus.setText(confirmedCount() + " confirmed members loaded for " + date + ".");
-                } catch (Exception error) { showError(rootMessage(error)); attendanceStatus.setText("Attendance could not be loaded."); }
+        loadButton.setDisable(true);
+        attendanceStatus.setText("Loading attendance from Google Sheets");
+        Task<List<AttendanceRecord>> task = new Task<>() {
+            @Override protected List<AttendanceRecord> call() throws Exception {
+                return attendanceService.loadAttendance(workspace.sheetUrl(), date);
             }
-        }.execute();
+        };
+        task.setOnSucceeded(event -> {
+            workspace.setSessionDate(date);
+            workspace.setAttendance(task.getValue());
+            saveWorkspace();
+            refreshWorkspaceDetails();
+            attendanceStatus.setText(confirmedCount() + " confirmed members loaded for " + date + ".");
+            loadButton.setDisable(false);
+        });
+        task.setOnFailed(event -> {
+            loadButton.setDisable(false);
+            attendanceStatus.setText("Attendance could not be loaded.");
+            showError(rootMessage(task.getException()));
+        });
+        Thread loader = new Thread(task, "attendance-loader");
+        loader.setDaemon(true);
+        loader.start();
     }
 
     private void addDuty() {
-        try { workspace.duties().add(new Duty(dutyNameField.getText(), peopleNeeded())); clearDutyFields(); saveWorkspace(); refreshView(); }
-        catch (IllegalArgumentException error) { showError(error.getMessage()); }
-    }
-
-    private void loadSelectedDuty() {
-        Duty duty = selectedDuty(); if (duty == null) return;
-        dutyNameField.setText(duty.name()); peopleNeededField.setText(String.valueOf(duty.peopleNeeded()));
+        try {
+            workspace.duties().add(new Duty(dutyNameField.getText(), peopleNeededSpinner.getValue()));
+            duties.setAll(workspace.duties()); clearDutyFields(); saveWorkspace(); refreshWorkspaceDetails();
+        } catch (IllegalArgumentException error) { showError(error.getMessage()); }
     }
 
     private void updateDuty() {
-        Duty duty = selectedDuty(); if (duty == null) return;
-        try { duty.rename(dutyNameField.getText()); duty.setPeopleNeeded(peopleNeeded()); clearDutyFields(); saveWorkspace(); refreshView(); }
-        catch (IllegalArgumentException error) { showError(error.getMessage()); }
+        Duty duty = dutyTable.getSelectionModel().getSelectedItem();
+        if (duty == null) { showError("Select a duty first."); return; }
+        try {
+            duty.rename(dutyNameField.getText()); duty.setPeopleNeeded(peopleNeededSpinner.getValue());
+            duties.setAll(workspace.duties()); clearDutyFields(); saveWorkspace(); refreshWorkspaceDetails();
+        } catch (IllegalArgumentException error) { showError(error.getMessage()); }
     }
 
     private void deleteDuty() {
-        int row = dutyTable.getSelectedRow(); if (row < 0) { showError("Select a duty first."); return; }
-        workspace.duties().remove(row); clearDutyFields(); saveWorkspace(); refreshView();
+        Duty duty = dutyTable.getSelectionModel().getSelectedItem();
+        if (duty == null) { showError("Select a duty first."); return; }
+        workspace.duties().remove(duty);
+        duties.setAll(workspace.duties()); clearDutyFields(); saveWorkspace(); refreshWorkspaceDetails();
     }
 
     private void generateRoster() {
         try {
-            List<RosterAssignment> roster = rosterService.generate(workspace); saveWorkspace();
+            List<RosterAssignment> roster = rosterService.generate(workspace);
+            saveWorkspace();
             StringBuilder text = new StringBuilder("Duty roster - ").append(workspace.sessionDate()).append("\n\n");
             for (RosterAssignment assignment : roster) {
                 text.append(assignment.dutyName()).append("\n");
@@ -207,21 +348,84 @@ public final class TeamSyncApp extends JFrame {
         } catch (IllegalStateException error) { showError(error.getMessage()); }
     }
 
-    private void refreshView() {
-        sheetUrlField.setText(workspace.sheetUrl()); dateField.setText(workspace.sessionDate().toString());
-        workspaceStatus.setText(workspace.sheetUrl().isBlank() ? "Not linked" : "Sheet linked");
-        dutyTableModel.setRowCount(0); workspace.duties().forEach(duty -> dutyTableModel.addRow(new Object[] {duty.name(), duty.peopleNeeded()}));
+    private void refreshWorkspaceDetails() {
+        connectionStatus.setText(workspace.sheetUrl().isBlank() ? "Sheet not linked" : "Sheet linked");
+        connectionStatus.getStyleClass().removeAll("status-neutral", "status-success");
+        connectionStatus.getStyleClass().add(workspace.sheetUrl().isBlank() ? "status-neutral" : "status-success");
     }
 
-    private int peopleNeeded() { try { return Integer.parseInt(peopleNeededField.getText().trim()); } catch (NumberFormatException error) { throw new IllegalArgumentException("People needed must be a whole number."); } }
+    private String attendanceSummary() { return workspace.attendance().isEmpty() ? "No attendance loaded yet." : confirmedCount() + " confirmed member(s) for " + workspace.sessionDate() + "."; }
+    private String dutySummary() { return workspace.duties().isEmpty() ? "No duties have been added." : workspace.duties().size() + " duty type(s) added."; }
+    private String rosterSummary() { return workspace.attendance().isEmpty() || workspace.duties().isEmpty() ? "Attendance and duties are needed first." : "Ready to generate assignments."; }
     private int confirmedCount() { return (int) workspace.attendance().stream().filter(AttendanceRecord::isConfirmed).count(); }
-    private Duty selectedDuty() { int row = dutyTable.getSelectedRow(); if (row < 0) { showError("Select a duty first."); return null; } return workspace.duties().get(row); }
-    private void clearDutyFields() { dutyNameField.setText(""); peopleNeededField.setText("1"); }
-    private void saveWorkspace() { try { workspaceStore.save(workspace); } catch (IOException error) { showError("Could not save local workspace: " + error.getMessage()); } }
-    private void showError(String message) { JOptionPane.showMessageDialog(this, message, "TeamSync", JOptionPane.ERROR_MESSAGE); }
-    private String rootMessage(Exception error) { return error.getCause() == null ? error.getMessage() : error.getCause().getMessage(); }
-    private TitledBorder titledBorder(String title) { return BorderFactory.createTitledBorder(BorderFactory.createLineBorder(new Color(210, 220, 218)), title); }
-    private GridBagConstraints constraints() { GridBagConstraints c = new GridBagConstraints(); c.insets = new Insets(5, 4, 5, 4); c.anchor = GridBagConstraints.WEST; return c; }
+    private void clearDutyFields() { dutyNameField.clear(); peopleNeededSpinner.getValueFactory().setValue(1); dutyTable.getSelectionModel().clearSelection(); }
 
-    public static void main(String[] args) { SwingUtilities.invokeLater(() -> new TeamSyncApp().setVisible(true)); }
+    private void setPageHeading(String title, String subtitle) {
+        pageTitle.setText(title); pageTitle.getStyleClass().setAll("page-title");
+        pageSubtitle.setText(subtitle); pageSubtitle.getStyleClass().setAll("page-subtitle");
+    }
+
+    private void selectNavigation(Button selected) {
+        for (Button button : List.of(overviewNav, attendanceNav, dutiesNav, rosterNav)) button.getStyleClass().remove("navigation-button-selected");
+        selected.getStyleClass().add("navigation-button-selected");
+    }
+
+    private Button navButton(String text) {
+        Button button = new Button(text);
+        button.setMaxWidth(Double.MAX_VALUE); button.setAlignment(Pos.CENTER_LEFT); button.getStyleClass().add("navigation-button");
+        return button;
+    }
+
+    private HBox styledBox(String styleClass, double spacing, Node... nodes) {
+        HBox box = new HBox(spacing, nodes);
+        box.getStyleClass().add(styleClass); box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
+    private FlowPane styledFlow(String styleClass, double spacing, Node... nodes) {
+        FlowPane pane = new FlowPane(spacing, spacing, nodes);
+        pane.getStyleClass().add(styleClass);
+        return pane;
+    }
+
+    private void configureSummaryCardSizes(FlowPane cards, VBox... cardsToSize) {
+        for (VBox card : cardsToSize) {
+            card.prefWidthProperty().bind(Bindings.createDoubleBinding(() -> {
+                double availableWidth = cards.getWidth();
+                if (availableWidth >= 760) return (availableWidth - 32) / 3;
+                if (availableWidth >= 500) return (availableWidth - 16) / 2;
+                return availableWidth;
+            }, cards.widthProperty()));
+        }
+    }
+
+    private TableCell<Duty, String> wrappingCell() {
+        TableCell<Duty, String> cell = new TableCell<>();
+        cell.setWrapText(true);
+        cell.setTextOverrun(OverrunStyle.CLIP);
+        cell.itemProperty().addListener((observable, oldValue, newValue) -> cell.setText(newValue));
+        return cell;
+    }
+
+    private void saveWorkspace() {
+        try { workspaceStore.save(workspace); }
+        catch (IOException error) { showError("Could not save the local workspace: " + error.getMessage()); }
+    }
+
+    private void showError(String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle(APP_TITLE); alert.setHeaderText("Action could not be completed");
+            alert.setContentText(message == null || message.isBlank() ? "An unexpected error occurred." : message);
+            alert.showAndWait();
+        });
+    }
+
+    private String rootMessage(Throwable error) {
+        Throwable cause = error;
+        while (cause.getCause() != null) cause = cause.getCause();
+        return cause.getMessage();
+    }
+
+    public static void main(String[] args) { launch(args); }
 }

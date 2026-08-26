@@ -2,17 +2,15 @@
 
 ## Start the application
 
-From the project root, compile the Java source:
+TeamSync now uses JavaFX. From the project root, run:
 
 ```bash
-javac -d out $(find src/main/java -name '*.java')
+gradle run
 ```
 
-Then start the desktop application:
+The Gradle wrapper automatically provisions Java SE 25 and downloads the matching JavaFX 25 native libraries for Windows, Linux, or macOS on the first run. Use the platform-appropriate command: `./gradlew run` on macOS/Linux and `gradlew.bat run` on Windows.
 
-```bash
-java -cp out teamsync.TeamSyncApp
-```
+On Linux, JavaFX 25 requires GTK 3.20 or later; install your distribution's GTK 3 runtime before launching TeamSync.
 
 ## MVP workflow
 
@@ -25,9 +23,8 @@ TeamSync saves its local workspace in your user directory, so linked Sheet detai
 
 ## Verify the MVP
 
-Run the dependency-free regression test with:
+Run the regression test with:
 
 ```bash
-javac -d out $(find src/main/java src/test/java -name '*.java')
-java -cp out teamsync.TeamSyncSelfTest
+gradle selfTest
 ```
