@@ -1,6 +1,7 @@
 package teamsync;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -15,6 +16,7 @@ public final class TeamSyncSelfTest {
         verifiesExpectedAttendanceUpdate();
         verifiesMonthlyPercentagesIncludeLateAndEarlyAttendance();
         verifiesMonthlyRosterHistoryGroupsAssignmentsByMemberAndDuty();
+        verifiesImportantDateReminderConfiguration();
         verifiesSingleDutyBeforeRepeats();
         System.out.println("TeamSync self-test passed.");
     }
@@ -138,6 +140,19 @@ public final class TeamSyncSelfTest {
                 || !amy.memberName().equals("Amy") || amy.datesFor("Set up").size() != 2
                 || amy.totalAssignments() != 2) {
             throw new AssertionError("Monthly roster history must group each member's allocations by duty and omit other months.");
+        }
+    }
+
+    private static void verifiesImportantDateReminderConfiguration() {
+        ImportantDate event = new ImportantDate("Team briefing", LocalDate.parse("2026-09-01"), LocalTime.of(9, 30),
+                ReminderOption.CUSTOM, 45);
+        if (!event.hasReminder() || event.reminderMinutesBefore() != 45
+                || !event.reminderLabel().equals("Custom: 45 min before")) {
+            throw new AssertionError("Important dates must retain their custom reminder lead time.");
+        }
+        event.update("Team briefing", LocalDate.parse("2026-09-01"), LocalTime.of(9, 30), null, 0);
+        if (event.hasReminder() || !event.reminderLabel().equals("Off")) {
+            throw new AssertionError("Important dates must allow reminders to be turned off.");
         }
     }
 }

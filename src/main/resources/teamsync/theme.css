@@ -16,6 +16,7 @@
 .section-heading { -fx-text-fill: #123b66; -fx-font-size: 20px; -fx-font-weight: bold; }
 .content-card, .summary-card { -fx-background-color: white; -fx-border-color: #d4e2f1; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 22; }
 .content-card { -fx-min-height: 330; }
+.upcoming-summary-card { -fx-min-height: 0; }
 .summary-cards { -fx-padding: 4 0; }
 .summary-card { -fx-min-height: 210; }
 .card-heading { -fx-text-fill: #1a456f; -fx-font-size: 16px; -fx-font-weight: bold; }
@@ -53,6 +54,12 @@
 .monthly-row-secondary { -fx-text-fill: #647a91; -fx-font-size: 12px; }
 .monthly-row-percentage { -fx-text-fill: #1976d2; -fx-font-size: 13px; -fx-font-weight: bold; }
 .monthly-overall-statistic { -fx-background-color: #eaf3ff; -fx-text-fill: #155b9e; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 9 10; -fx-background-radius: 4; }
+.check-box { -fx-text-fill: #36546f; -fx-font-size: 13px; -fx-font-weight: bold; }
+.combo-box { -fx-background-radius: 5; -fx-border-color: #b9cee3; -fx-border-radius: 5; -fx-pref-width: 185; }
+.combo-box:focused { -fx-border-color: #1976d2; }
+.upcoming-event-row { -fx-background-color: #f8fbff; -fx-border-color: #e0ebf7; -fx-border-radius: 4; -fx-background-radius: 4; -fx-padding: 9 11; }
+.upcoming-event-name { -fx-text-fill: #1a456f; -fx-font-size: 13px; -fx-font-weight: bold; }
+.upcoming-event-details { -fx-text-fill: #647a91; -fx-font-size: 12px; }
 .status-pill { -fx-padding: 6 11; -fx-background-radius: 14; -fx-font-size: 12px; -fx-font-weight: bold; }
 .status-neutral { -fx-background-color: #e7f0fa; -fx-text-fill: #c9e3ff; }
 .status-success { -fx-background-color: #d8f3e7; -fx-text-fill: #196a49; }

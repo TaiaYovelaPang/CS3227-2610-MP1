@@ -14,6 +14,8 @@ public final class Workspace implements Serializable {
     private List<AttendanceRecord> attendance = new ArrayList<>();
     private final List<Duty> duties = new ArrayList<>();
     private final List<RosterAssignment> history = new ArrayList<>();
+    // Not final so workspaces saved before important dates were introduced can initialise it after deserialisation.
+    private List<ImportantDate> importantDates = new ArrayList<>();
 
     public String sheetUrl() { return sheetUrl; }
     public void setSheetUrl(String sheetUrl) { this.sheetUrl = sheetUrl; }
@@ -23,4 +25,8 @@ public final class Workspace implements Serializable {
     public void setAttendance(List<AttendanceRecord> attendance) { this.attendance = new ArrayList<>(attendance); }
     public List<Duty> duties() { return duties; }
     public List<RosterAssignment> history() { return history; }
+    public List<ImportantDate> importantDates() {
+        if (importantDates == null) importantDates = new ArrayList<>();
+        return importantDates;
+    }
 }
