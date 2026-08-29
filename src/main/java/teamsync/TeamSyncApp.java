@@ -2,10 +2,13 @@ package teamsync;
 
 import java.io.IOException;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import javax.imageio.ImageIO;
 import java.time.LocalDate;
 import java.time.format.TextStyle;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.List;
 import javafx.application.Application;
@@ -63,8 +66,10 @@ public final class TeamSyncApp extends Application {
     private final TextField dutyNameField = new TextField();
     private final Spinner<Integer> peopleNeededSpinner = new Spinner<>();
     private final TableView<Duty> dutyTable = new TableView<>();
+    private final TableView<MonthlyRosterHistory.MemberRow> rosterHistoryTable = new TableView<>();
     private final TextArea rosterArea = new TextArea();
     private final TextArea attendanceMessageArea = new TextArea();
+    private final DatePicker rosterHistoryMonthPicker = new DatePicker();
 
     private final StackPane content = new StackPane();
     private final Button overviewNav = navButton("Overview");
@@ -236,7 +241,21 @@ public final class TeamSyncApp extends Application {
         if (rosterArea.getText().isBlank()) rosterArea.setText("Load attendance and add duties to generate a roster.");
         VBox rosterSection = new VBox(12, toolbar, rosterArea);
         VBox.setVgrow(rosterArea, Priority.ALWAYS);
-        content.getChildren().setAll(pageContent(sectionCard("Duty roster", rosterSection)));
+        rosterHistoryMonthPicker.setValue(workspace.sessionDate());
+        rosterHistoryMonthPicker.setOnAction(event -> refreshRosterHistory());
+        Button exportHistory = new Button("Export month as CSV");
+        exportHistory.getStyleClass().add("secondary-button");
+        exportHistory.setOnAction(event -> exportRosterHistory());
+        Label historyHint = new Label("Select any day in the month to compare each member's duty allocations.");
+        historyHint.getStyleClass().add("help-text");
+        HBox historyToolbar = styledBox("roster-toolbar", 12, new Label("History month"), rosterHistoryMonthPicker, exportHistory);
+        configureRosterHistoryTable();
+        refreshRosterHistory();
+        VBox historySection = new VBox(12, historyToolbar, historyHint, rosterHistoryTable);
+        VBox.setVgrow(rosterHistoryTable, Priority.ALWAYS);
+        VBox body = new VBox(18, sectionCard("Duty roster", rosterSection), sectionCard("Monthly allocation history", historySection));
+        VBox.setVgrow(historySection, Priority.ALWAYS);
+        content.getChildren().setAll(pageContent(body));
     }
 
     private VBox pageContent(Node body) {
@@ -297,6 +316,38 @@ public final class TeamSyncApp extends Application {
                 peopleNeededSpinner.getValueFactory().setValue(selectedDuty.peopleNeeded());
             }
         });
+    }
+
+    private void configureRosterHistoryTable() {
+        rosterHistoryTable.setPlaceholder(new Label("No duty allocations have been saved for this month."));
+        rosterHistoryTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_NEXT_COLUMN);
+    }
+
+    private void refreshRosterHistory() {
+        LocalDate selectedDate = rosterHistoryMonthPicker.getValue();
+        if (selectedDate == null) return;
+        MonthlyRosterHistory report = MonthlyRosterHistory.from(YearMonth.from(selectedDate), workspace.history());
+        TableColumn<MonthlyRosterHistory.MemberRow, String> member = new TableColumn<>("Member");
+        member.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().memberName()));
+        List<TableColumn<MonthlyRosterHistory.MemberRow, ?>> columns = new java.util.ArrayList<>();
+        columns.add(member);
+        for (String dutyName : report.dutyNames()) {
+            TableColumn<MonthlyRosterHistory.MemberRow, String> duty = new TableColumn<>(dutyName);
+            duty.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(formatAllocationDates(cell.getValue().datesFor(dutyName))));
+            duty.setCellFactory(column -> wrappingCell());
+            columns.add(duty);
+        }
+        TableColumn<MonthlyRosterHistory.MemberRow, Number> total = new TableColumn<>("Total");
+        total.setCellValueFactory(cell -> new javafx.beans.property.SimpleIntegerProperty(cell.getValue().totalAssignments()));
+        columns.add(total);
+        rosterHistoryTable.getColumns().setAll(columns);
+        rosterHistoryTable.setItems(FXCollections.observableArrayList(report.members()));
+    }
+
+    private String formatAllocationDates(List<LocalDate> dates) {
+        if (dates.isEmpty()) return "—";
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("d MMM");
+        return dates.size() + " ×\n" + dates.stream().map(formatter::format).collect(java.util.stream.Collectors.joining(", "));
     }
 
     private void linkSheet() {
@@ -375,8 +426,48 @@ public final class TeamSyncApp extends Application {
                 text.append("\n");
             }
             rosterArea.setText(text.toString());
+            if (rosterHistoryMonthPicker.getValue() != null) refreshRosterHistory();
         } catch (IllegalStateException error) { showError(error.getMessage()); }
     }
+
+    private void exportRosterHistory() {
+        LocalDate selectedDate = rosterHistoryMonthPicker.getValue();
+        if (selectedDate == null) { showError("Choose a month to export."); return; }
+        MonthlyRosterHistory report = MonthlyRosterHistory.from(YearMonth.from(selectedDate), workspace.history());
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Export monthly duty allocations");
+        chooser.setInitialFileName("duty-allocations-" + report.month() + ".csv");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV files", "*.csv"));
+        File target = chooser.showSaveDialog(content.getScene().getWindow());
+        if (target == null) return;
+        try {
+            Files.writeString(target.toPath(), rosterHistoryCsv(report), StandardCharsets.UTF_8);
+        } catch (IOException error) {
+            showError("Could not export duty allocations: " + error.getMessage());
+        }
+    }
+
+    private String rosterHistoryCsv(MonthlyRosterHistory report) {
+        StringBuilder csv = new StringBuilder("Month,Member,Duty,Date\n");
+        for (MonthlyRosterHistory.MemberRow member : report.members()) {
+            for (String duty : report.dutyNames()) {
+                for (LocalDate date : member.datesFor(duty)) {
+                    csv.append(csvField(report.month().toString())).append(',')
+                            .append(csvField(member.memberName())).append(',')
+                            .append(csvField(duty)).append(',').append(date).append('\n');
+                }
+            }
+        }
+        csv.append("\nMonth,Member,Total duty count\n");
+        for (MonthlyRosterHistory.MemberRow member : report.members()) {
+            csv.append(csvField(report.month().toString())).append(',')
+                    .append(csvField(member.memberName())).append(',')
+                    .append(member.totalAssignments()).append('\n');
+        }
+        return csv.toString();
+    }
+
+    private String csvField(String value) { return '"' + value.replace("\"", "\"\"") + '"'; }
 
     private void refreshWorkspaceDetails() {
         connectionStatus.setText(workspace.sheetUrl().isBlank() ? "Sheet not linked" : "Sheet linked");
@@ -570,8 +661,8 @@ public final class TeamSyncApp extends Application {
         }
     }
 
-    private TableCell<Duty, String> wrappingCell() {
-        TableCell<Duty, String> cell = new TableCell<>();
+    private <T> TableCell<T, String> wrappingCell() {
+        TableCell<T, String> cell = new TableCell<>();
         cell.setWrapText(true);
         cell.setTextOverrun(OverrunStyle.CLIP);
         cell.itemProperty().addListener((observable, oldValue, newValue) -> cell.setText(newValue));

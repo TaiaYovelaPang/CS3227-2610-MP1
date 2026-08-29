@@ -14,6 +14,7 @@ public final class TeamSyncSelfTest {
         verifiesAttendanceCodesAreParsed();
         verifiesExpectedAttendanceUpdate();
         verifiesMonthlyPercentagesIncludeLateAndEarlyAttendance();
+        verifiesMonthlyRosterHistoryGroupsAssignmentsByMemberAndDuty();
         verifiesSingleDutyBeforeRepeats();
         System.out.println("TeamSync self-test passed.");
     }
@@ -124,5 +125,19 @@ public final class TeamSyncSelfTest {
         List<RosterAssignment> repeatsRequired = new RosterService().generate(workspace);
         List<String> secondPass = repeatsRequired.stream().flatMap(assignment -> assignment.members().stream()).toList();
         if (secondPass.size() != 4 || Set.copyOf(secondPass).size() != 3) throw new AssertionError("Exactly one repeated assignment is expected when four slots need three attendees.");
+    }
+
+    private static void verifiesMonthlyRosterHistoryGroupsAssignmentsByMemberAndDuty() {
+        MonthlyRosterHistory history = MonthlyRosterHistory.from(java.time.YearMonth.parse("2026-08"), List.of(
+                new RosterAssignment(LocalDate.parse("2026-08-03"), "Set up", List.of("Amy", "Ben"), 0),
+                new RosterAssignment(LocalDate.parse("2026-08-10"), "Set up", List.of("Amy"), 0),
+                new RosterAssignment(LocalDate.parse("2026-08-10"), "Pack down", List.of("Ben"), 0),
+                new RosterAssignment(LocalDate.parse("2026-09-01"), "Set up", List.of("Chen"), 0)));
+        MonthlyRosterHistory.MemberRow amy = history.members().getFirst();
+        if (!history.dutyNames().equals(List.of("Pack down", "Set up")) || history.members().size() != 2
+                || !amy.memberName().equals("Amy") || amy.datesFor("Set up").size() != 2
+                || amy.totalAssignments() != 2) {
+            throw new AssertionError("Monthly roster history must group each member's allocations by duty and omit other months.");
+        }
     }
 }
