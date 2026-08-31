@@ -11,6 +11,7 @@ import java.time.LocalTime;
 import java.time.format.TextStyle;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.List;
@@ -78,6 +79,9 @@ public final class TeamSyncApp extends Application {
     private final DatePicker datePicker = new DatePicker();
     private final TextField dutyNameField = new TextField();
     private final Spinner<Integer> peopleNeededSpinner = new Spinner<>();
+    private final CheckBox onTimeDutyCheck = selectedCheckBox("On time");
+    private final CheckBox lateDutyCheck = new CheckBox("Coming late");
+    private final CheckBox leavingEarlyDutyCheck = new CheckBox("Leaving early");
     private final TableView<Duty> dutyTable = new TableView<>();
     private final TableView<MonthlyRosterHistory.MemberRow> rosterHistoryTable = new TableView<>();
     private final TextArea rosterArea = new TextArea();
@@ -207,7 +211,7 @@ public final class TeamSyncApp extends Application {
         Button load = new Button("Load attendance");
         load.getStyleClass().add("primary-button");
         load.setOnAction(event -> loadAttendance(load));
-        Label formatHint = new Label("Sheet format: the first column is Member; date columns use YYYY-MM-DD; use 1 = on time, 0 = absent, L = late, E = leaving early. Only 1 is selected for full-session duties.");
+        Label formatHint = new Label("Sheet format: the first column is Member; date columns use YYYY-MM-DD; use 1 = on time, 0 = absent, L = late, E = leaving early. Duty eligibility controls who may be assigned.");
         formatHint.setWrapText(true);
         formatHint.getStyleClass().add("help-text");
         attendanceStatus.getStyleClass().setAll("status-message");
@@ -253,10 +257,11 @@ public final class TeamSyncApp extends Application {
         delete.setOnAction(event -> deleteDuty());
         HBox nameRow = styledBox("form-row", 12, dutyNameField, peopleNeededSpinner, add);
         HBox.setHgrow(dutyNameField, Priority.ALWAYS);
+        HBox eligibilityRow = styledBox("form-row", 12, new Label("May be assigned to people:"), onTimeDutyCheck, lateDutyCheck, leavingEarlyDutyCheck);
         HBox actions = styledBox("action-row", 10, update, delete);
         VBox tableSection = new VBox(12, dutyTable, actions);
         VBox.setVgrow(dutyTable, Priority.ALWAYS);
-        content.getChildren().setAll(pageContent(sectionCard("Add a duty", nameRow, "Current duties", tableSection)));
+        content.getChildren().setAll(pageContent(sectionCard("Add a duty", new VBox(12, nameRow, eligibilityRow), "Current duties", tableSection)));
     }
 
     private void showRoster() {
@@ -265,7 +270,7 @@ public final class TeamSyncApp extends Application {
         Button generate = new Button("Generate duty roster");
         generate.getStyleClass().add("primary-button");
         generate.setOnAction(event -> generateRoster());
-        Label rule = new Label("Confirmed members receive one duty before anyone is assigned a second duty.");
+        Label rule = new Label("Eligible members receive one duty before anyone is assigned a second duty.");
         rule.setWrapText(true);
         rule.getStyleClass().add("help-text");
         Region spacer = new Region();
@@ -377,7 +382,10 @@ public final class TeamSyncApp extends Application {
         name.setCellFactory(column -> wrappingCell());
         TableColumn<Duty, Number> people = new TableColumn<>("People needed");
         people.setCellValueFactory(cell -> new javafx.beans.property.SimpleIntegerProperty(cell.getValue().peopleNeeded()));
-        dutyTable.getColumns().setAll(List.of(name, people));
+        TableColumn<Duty, String> eligibility = new TableColumn<>("Eligible attendance");
+        eligibility.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(dutyEligibilityLabel(cell.getValue())));
+        eligibility.setCellFactory(column -> wrappingCell());
+        dutyTable.getColumns().setAll(List.of(name, people, eligibility));
         dutyTable.setItems(duties);
         dutyTable.setPlaceholder(new Label("No duties yet. Add the first job above."));
         dutyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_NEXT_COLUMN);
@@ -385,6 +393,7 @@ public final class TeamSyncApp extends Application {
             if (selectedDuty != null) {
                 dutyNameField.setText(selectedDuty.name());
                 peopleNeededSpinner.getValueFactory().setValue(selectedDuty.peopleNeeded());
+                setDutyEligibility(selectedDuty.eligibleStatuses());
             }
         });
     }
@@ -523,7 +532,10 @@ public final class TeamSyncApp extends Application {
 
     private void addDuty() {
         try {
-            workspace.duties().add(new Duty(dutyNameField.getText(), peopleNeededSpinner.getValue()));
+            DutyValidator.ensureUniqueName(workspace.duties(), dutyNameField.getText(), null);
+            Duty duty = new Duty(dutyNameField.getText(), peopleNeededSpinner.getValue());
+            duty.setEligibleStatuses(selectedDutyStatuses());
+            workspace.duties().add(duty);
             duties.setAll(workspace.duties()); clearDutyFields(); saveWorkspace(); refreshWorkspaceDetails();
         } catch (IllegalArgumentException error) { showError(error.getMessage()); }
     }
@@ -532,7 +544,11 @@ public final class TeamSyncApp extends Application {
         Duty duty = dutyTable.getSelectionModel().getSelectedItem();
         if (duty == null) { showError("Select a duty first."); return; }
         try {
+            DutyValidator.ensureUniqueName(workspace.duties(), dutyNameField.getText(), duty.id());
+            Duty updated = new Duty(duty.id(), dutyNameField.getText(), peopleNeededSpinner.getValue());
+            updated.setEligibleStatuses(selectedDutyStatuses());
             duty.rename(dutyNameField.getText()); duty.setPeopleNeeded(peopleNeededSpinner.getValue());
+            duty.setEligibleStatuses(updated.eligibleStatuses());
             duties.setAll(workspace.duties()); clearDutyFields(); saveWorkspace(); refreshWorkspaceDetails();
         } catch (IllegalArgumentException error) { showError(error.getMessage()); }
     }
@@ -842,7 +858,37 @@ public final class TeamSyncApp extends Application {
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
     }
-    private void clearDutyFields() { dutyNameField.clear(); peopleNeededSpinner.getValueFactory().setValue(1); dutyTable.getSelectionModel().clearSelection(); }
+    private void clearDutyFields() {
+        dutyNameField.clear();
+        peopleNeededSpinner.getValueFactory().setValue(1);
+        setDutyEligibility(Set.of(AttendanceStatus.ON_TIME));
+        dutyTable.getSelectionModel().clearSelection();
+    }
+
+    private static CheckBox selectedCheckBox(String label) {
+        CheckBox checkBox = new CheckBox(label);
+        checkBox.setSelected(true);
+        return checkBox;
+    }
+
+    private Set<AttendanceStatus> selectedDutyStatuses() {
+        Set<AttendanceStatus> statuses = EnumSet.noneOf(AttendanceStatus.class);
+        if (onTimeDutyCheck.isSelected()) statuses.add(AttendanceStatus.ON_TIME);
+        if (lateDutyCheck.isSelected()) statuses.add(AttendanceStatus.LATE);
+        if (leavingEarlyDutyCheck.isSelected()) statuses.add(AttendanceStatus.LEFT_EARLY);
+        return statuses;
+    }
+
+    private void setDutyEligibility(Set<AttendanceStatus> statuses) {
+        onTimeDutyCheck.setSelected(statuses.contains(AttendanceStatus.ON_TIME));
+        lateDutyCheck.setSelected(statuses.contains(AttendanceStatus.LATE));
+        leavingEarlyDutyCheck.setSelected(statuses.contains(AttendanceStatus.LEFT_EARLY));
+    }
+
+    private String dutyEligibilityLabel(Duty duty) {
+        return java.util.Arrays.stream(AttendanceStatus.values()).filter(duty::isEligible)
+                .map(AttendanceStatus::displayName).collect(java.util.stream.Collectors.joining(", "));
+    }
 
     private void clearImportantDateFields() {
         importantDateNameField.clear();

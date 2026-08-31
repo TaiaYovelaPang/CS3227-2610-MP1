@@ -12,32 +12,43 @@ import java.util.Set;
 /** Applies attendance, fairness, and same-day assignment rules to create a roster. */
 public final class RosterService {
     public List<RosterAssignment> generate(Workspace workspace) {
-        List<String> available = workspace.attendance().stream().filter(AttendanceRecord::isConfirmed)
-                .map(AttendanceRecord::memberName).toList();
-        if (available.isEmpty()) throw new IllegalStateException("Load confirmed attendance before generating a roster.");
+        List<AttendanceRecord> attendees = workspace.attendance().stream().filter(AttendanceRecord::attended).toList();
+        if (attendees.isEmpty()) throw new IllegalStateException("Load attendance before generating a roster.");
         if (workspace.duties().isEmpty()) throw new IllegalStateException("Add at least one duty before generating a roster.");
 
         LocalDate date = workspace.sessionDate();
         workspace.history().removeIf(assignment -> assignment.date().equals(date));
         int requiredSlots = workspace.duties().stream().mapToInt(Duty::peopleNeeded).sum();
-        boolean repeatsAllowed = available.size() < requiredSlots;
+        Set<String> eligibleMembers = attendees.stream()
+                .filter(record -> workspace.duties().stream().anyMatch(duty -> duty.isEligible(record.status())))
+                .map(AttendanceRecord::memberName).collect(java.util.stream.Collectors.toSet());
+        boolean repeatsAllowed = eligibleMembers.size() < requiredSlots;
         Set<String> assignedToday = new HashSet<>();
         Map<String, Integer> dailyCounts = new HashMap<>();
-        available.forEach(member -> dailyCounts.put(member, 0));
-        List<RosterAssignment> roster = new ArrayList<>();
+        eligibleMembers.forEach(member -> dailyCounts.put(member, 0));
+        List<Duty> assignmentOrder = new ArrayList<>(workspace.duties());
+        assignmentOrder.sort(Comparator.comparingInt(duty -> eligibleMembersFor(duty, attendees).size()));
+        Map<Duty, RosterAssignment> assignments = new HashMap<>();
 
-        for (Duty duty : workspace.duties()) {
-            List<String> selected = ordered(available.stream().filter(member -> !assignedToday.contains(member)).toList(), duty.name(), dailyCounts, workspace.history())
+        for (Duty duty : assignmentOrder) {
+            List<String> eligibleForDuty = eligibleMembersFor(duty, attendees);
+            List<String> selected = ordered(eligibleForDuty.stream().filter(member -> !assignedToday.contains(member)).toList(), duty.name(), dailyCounts, workspace.history())
                     .stream().limit(duty.peopleNeeded()).collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
             if (repeatsAllowed && selected.size() < duty.peopleNeeded()) {
-                List<String> repeats = ordered(available.stream().filter(member -> !selected.contains(member)).toList(), duty.name(), dailyCounts, workspace.history());
+                List<String> repeats = ordered(eligibleForDuty.stream().filter(member -> !selected.contains(member)).toList(), duty.name(), dailyCounts, workspace.history());
                 selected.addAll(repeats.stream().limit(duty.peopleNeeded() - selected.size()).toList());
             }
             selected.forEach(member -> { assignedToday.add(member); dailyCounts.merge(member, 1, Integer::sum); });
-            roster.add(new RosterAssignment(date, duty.name(), selected, duty.peopleNeeded() - selected.size()));
+            assignments.put(duty, new RosterAssignment(date, duty.name(), selected, duty.peopleNeeded() - selected.size()));
         }
+        List<RosterAssignment> roster = workspace.duties().stream().map(assignments::get).toList();
         workspace.history().addAll(roster);
         return roster;
+    }
+
+    private List<String> eligibleMembersFor(Duty duty, List<AttendanceRecord> attendees) {
+        return attendees.stream().filter(record -> duty.isEligible(record.status()))
+                .map(AttendanceRecord::memberName).toList();
     }
 
     private List<String> ordered(List<String> members, String dutyName, Map<String, Integer> dailyCounts, List<RosterAssignment> history) {

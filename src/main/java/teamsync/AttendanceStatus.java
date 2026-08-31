@@ -6,8 +6,8 @@ import java.util.Locale;
 public enum AttendanceStatus {
     ON_TIME("1", "On time"),
     ABSENT("0", "Absent"),
-    LATE("L", "Late"),
-    LEFT_EARLY("E", "Left early");
+    LATE("L", "Coming late"),
+    LEFT_EARLY("E", "Leaving early");
 
     private final String sheetCode;
     private final String displayName;
