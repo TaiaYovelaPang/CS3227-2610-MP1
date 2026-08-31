@@ -3,6 +3,8 @@ package teamsync;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -20,6 +22,7 @@ public final class TeamSyncSelfTest {
         verifiesImportantDateReminderConfiguration();
         verifiesImportantDateSchedulingValidation();
         verifiesPastImportantDatesAreRemovedAfterTheyEnd();
+        verifiesDefaultWorkspaceLinksExampleSheet();
         verifiesSingleDutyBeforeRepeats();
         verifiesDutiesCanIncludeLateAndEarlyLeavingMembers();
         verifiesDuplicateDutyNamesAreRejectedIgnoringCase();
@@ -115,6 +118,21 @@ public final class TeamSyncSelfTest {
             rejected = error.getMessage().contains("No attendance column");
         }
         if (!rejected) throw new AssertionError("A missing date column must be rejected.");
+    }
+
+    private static void verifiesDefaultWorkspaceLinksExampleSheet() {
+        try {
+            Path savePath = Files.createTempFile("teamsync-workspace", ".ser");
+            Files.delete(savePath);
+            Workspace workspace = new WorkspaceStore(savePath).load();
+            if (!workspace.sheetUrl().equals("https://docs.google.com/spreadsheets/d/1sRc-ynCihakKHRiFLxjxxqRaZg8_P5i3gjKuoo1Ei_M/edit?usp=sharing")
+                    || !workspace.attendance().isEmpty() || !workspace.duties().isEmpty()
+                    || !workspace.history().isEmpty() || !workspace.importantDates().isEmpty()) {
+                throw new AssertionError("A new workspace must contain only the configured example-sheet URL.");
+            }
+        } catch (java.io.IOException error) {
+            throw new AssertionError("Could not prepare the default-workspace test.", error);
+        }
     }
 
     private static void verifiesSingleDutyBeforeRepeats() {
