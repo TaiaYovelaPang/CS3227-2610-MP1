@@ -15,7 +15,7 @@
 .page-subtitle { -fx-text-fill: #667b92; -fx-font-size: 14px; -fx-padding: -14 0 2 0; }
 .section-heading { -fx-text-fill: #123b66; -fx-font-size: 20px; -fx-font-weight: bold; }
 .content-card, .summary-card { -fx-background-color: white; -fx-border-color: #d4e2f1; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 22; }
-.content-card { -fx-min-height: 330; }
+.content-card { -fx-min-height: 0; }
 .upcoming-summary-card { -fx-min-height: 0; }
 .summary-cards { -fx-padding: 4 0; }
 .summary-card { -fx-min-height: 210; }
@@ -33,6 +33,8 @@
 .text-field, .date-picker, .spinner { -fx-background-radius: 5; -fx-border-color: #b9cee3; -fx-border-radius: 5; }
 .text-field:focused, .date-picker:focused, .spinner:focused { -fx-border-color: #1976d2; }
 .date-picker, .spinner { -fx-pref-width: 180; }
+.form-flow, .action-flow, .roster-toolbar, .statistics-export-actions { -fx-alignment: center-left; }
+.form-flow .text-field { -fx-pref-width: 280; }
 .table-view { -fx-border-color: #d4e2f1; -fx-border-radius: 5; -fx-background-radius: 5; }
 .table-view .column-header-background { -fx-background-color: #eaf3ff; }
 .table-view .column-header, .table-view .filler { -fx-background-color: transparent; -fx-size: 38; }
@@ -43,7 +45,13 @@
 .attendance-output { -fx-font-family: "System"; -fx-font-size: 13px; -fx-border-color: #d4e2f1; -fx-background-radius: 5; }
 .statistics-export { -fx-background-color: #f8fbff; -fx-padding: 18; -fx-border-color: #d4e2f1; -fx-border-radius: 6; -fx-background-radius: 6; }
 .statistics-title { -fx-text-fill: #1a456f; -fx-font-size: 15px; -fx-font-weight: bold; }
-.statistics-cards { -fx-alignment: stretch; }
+.statistics-subtitle { -fx-text-fill: #647a91; -fx-font-size: 13px; -fx-padding: -8 0 0 0; }
+.statistics-subsection-title { -fx-text-fill: #1a456f; -fx-font-size: 14px; -fx-font-weight: bold; -fx-padding: 6 0 -2 0; }
+.statistics-cards { -fx-alignment: center-left; }
+.statistics-export-options { -fx-padding: 2 0 0 0; }
+.statistics-export-option { -fx-background-color: #f8fbff; -fx-border-color: #d4e2f1; -fx-border-radius: 6; -fx-background-radius: 6; -fx-padding: 14; }
+.statistics-export-actions { -fx-padding: 5 0 0 0; }
+.empty-state { -fx-background-color: #eef5fc; -fx-text-fill: #496984; -fx-padding: 10 12; -fx-background-radius: 5; -fx-font-size: 13px; }
 .statistic-card { -fx-background-color: white; -fx-border-color: #d4e2f1; -fx-border-radius: 5; -fx-background-radius: 5; -fx-padding: 14; -fx-min-width: 130; }
 .statistic-value { -fx-text-fill: #1976d2; -fx-font-size: 20px; -fx-font-weight: bold; }
 .statistic-label { -fx-text-fill: #1a456f; -fx-font-size: 13px; -fx-font-weight: bold; }
@@ -53,7 +61,6 @@
 .monthly-row-primary { -fx-text-fill: #1a456f; -fx-font-size: 12px; -fx-font-weight: bold; }
 .monthly-row-secondary { -fx-text-fill: #647a91; -fx-font-size: 12px; }
 .monthly-row-percentage { -fx-text-fill: #1976d2; -fx-font-size: 13px; -fx-font-weight: bold; }
-.monthly-overall-statistic { -fx-background-color: #eaf3ff; -fx-text-fill: #155b9e; -fx-font-size: 13px; -fx-font-weight: bold; -fx-padding: 9 10; -fx-background-radius: 4; }
 .check-box { -fx-text-fill: #36546f; -fx-font-size: 13px; -fx-font-weight: bold; }
 .combo-box { -fx-background-radius: 5; -fx-border-color: #b9cee3; -fx-border-radius: 5; -fx-pref-width: 185; }
 .combo-box:focused { -fx-border-color: #1976d2; }

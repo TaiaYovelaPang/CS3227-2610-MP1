@@ -15,6 +15,7 @@ import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -61,6 +62,19 @@ public final class TeamSyncApp extends Application {
     private static final String APP_TITLE = "TeamSync";
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
 
+    private enum AttendanceStatistic {
+        BY_SESSION("Attendance by session", "attendance-by-session"),
+        INDIVIDUAL("Individual attendance", "individual-attendance");
+
+        private final String label;
+        private final String fileStem;
+
+        AttendanceStatistic(String label, String fileStem) {
+            this.label = label;
+            this.fileStem = fileStem;
+        }
+    }
+
     private final WorkspaceStore workspaceStore = new WorkspaceStore();
     private final AttendanceService attendanceService = new AttendanceService();
     private final RosterService rosterService = new RosterService();
@@ -68,7 +82,7 @@ public final class TeamSyncApp extends Application {
     private final ObservableList<Duty> duties = FXCollections.observableArrayList();
     private final ObservableList<ImportantDate> importantDates = FXCollections.observableArrayList();
     private final Set<String> displayedReminders = new HashSet<>();
-    private final Timeline reminderChecker = new Timeline(new KeyFrame(Duration.seconds(30), event -> checkReminders()));
+    private final Timeline reminderChecker = new Timeline(new KeyFrame(Duration.seconds(30), _ -> checkReminders()));
 
     private final Label pageTitle = new Label();
     private final Label pageSubtitle = new Label();
@@ -79,13 +93,14 @@ public final class TeamSyncApp extends Application {
     private final DatePicker datePicker = new DatePicker();
     private final TextField dutyNameField = new TextField();
     private final Spinner<Integer> peopleNeededSpinner = new Spinner<>();
-    private final CheckBox onTimeDutyCheck = selectedCheckBox("On time");
+    private final CheckBox onTimeDutyCheck = selectedOnTimeCheckBox();
     private final CheckBox lateDutyCheck = new CheckBox("Coming late");
     private final CheckBox leavingEarlyDutyCheck = new CheckBox("Leaving early");
     private final TableView<Duty> dutyTable = new TableView<>();
     private final TableView<MonthlyRosterHistory.MemberRow> rosterHistoryTable = new TableView<>();
     private final TextArea rosterArea = new TextArea();
     private final TextArea attendanceMessageArea = new TextArea();
+    private final DatePicker attendanceReportMonthPicker = new DatePicker();
     private final DatePicker rosterHistoryMonthPicker = new DatePicker();
     private final TextField importantDateNameField = new TextField();
     private final DatePicker importantDatePicker = new DatePicker();
@@ -125,7 +140,7 @@ public final class TeamSyncApp extends Application {
         Platform.runLater(this::checkReminders);
 
         Scene scene = new Scene(root, 1120, 720);
-        scene.getStylesheets().add(TeamSyncApp.class.getResource("/teamsync/theme.css").toExternalForm());
+        scene.getStylesheets().add(themeStylesheet());
         stage.setTitle(APP_TITLE + " - Manage your team effortlessly");
         stage.setMinWidth(640);
         stage.setMinHeight(480);
@@ -150,15 +165,18 @@ public final class TeamSyncApp extends Application {
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         connectionStatus.getStyleClass().addAll("status-pill", "status-neutral");
-        return styledBox("top-bar", 18, brand, spacer, connectionStatus);
+        HBox topBar = new HBox(18, brand, spacer, connectionStatus);
+        topBar.getStyleClass().add("top-bar");
+        topBar.setAlignment(Pos.CENTER_LEFT);
+        return topBar;
     }
 
     private VBox buildNavigation() {
-        overviewNav.setOnAction(event -> showOverview());
-        attendanceNav.setOnAction(event -> showAttendance());
-        dutiesNav.setOnAction(event -> showDuties());
-        rosterNav.setOnAction(event -> showRoster());
-        importantDatesNav.setOnAction(event -> showImportantDates());
+        overviewNav.setOnAction(_ -> showOverview());
+        attendanceNav.setOnAction(_ -> showAttendance());
+        dutiesNav.setOnAction(_ -> showDuties());
+        rosterNav.setOnAction(_ -> showRoster());
+        importantDatesNav.setOnAction(_ -> showImportantDates());
         Label navigationLabel = new Label("WORKSPACE");
         navigationLabel.getStyleClass().add("navigation-label");
         VBox navigation = new VBox(8, navigationLabel, overviewNav, attendanceNav, dutiesNav, rosterNav, importantDatesNav);
@@ -179,21 +197,21 @@ public final class TeamSyncApp extends Application {
 
         Button attendanceAction = new Button("Manage attendance");
         attendanceAction.getStyleClass().add("primary-button");
-        attendanceAction.setOnAction(event -> showAttendance());
+        attendanceAction.setOnAction(_ -> showAttendance());
         Button dutiesAction = new Button("Manage duties");
-        dutiesAction.getStyleClass().add("secondary-button");
-        dutiesAction.setOnAction(event -> showDuties());
+        dutiesAction.getStyleClass().add("primary-button");
+        dutiesAction.setOnAction(_ -> showDuties());
         Button rosterAction = new Button("Open roster");
-        rosterAction.getStyleClass().add("secondary-button");
-        rosterAction.setOnAction(event -> showRoster());
+        rosterAction.getStyleClass().add("primary-button");
+        rosterAction.setOnAction(_ -> showRoster());
         VBox attendanceCard = summaryCard("01", "Attendance", attendanceSummary(), attendanceAction);
         VBox dutiesCard = summaryCard("02", "Duties", dutySummary(), dutiesAction);
         VBox rosterCard = summaryCard("03", "Roster", rosterSummary(), rosterAction);
         FlowPane cards = styledFlow("summary-cards", 16, attendanceCard, dutiesCard, rosterCard);
         configureSummaryCardSizes(cards, attendanceCard, dutiesCard, rosterCard);
         Button datesAction = new Button("View important dates");
-        datesAction.getStyleClass().add("secondary-button");
-        datesAction.setOnAction(event -> showImportantDates());
+        datesAction.getStyleClass().add("primary-button");
+        datesAction.setOnAction(_ -> showImportantDates());
         VBox upcomingCard = sectionCard("Upcoming important dates", upcomingDatesSummary(), datesAction);
         upcomingCard.getStyleClass().add("upcoming-summary-card");
         VBox overviewBody = new VBox(20, heading, explanation, cards, upcomingCard, overviewStatus);
@@ -206,13 +224,12 @@ public final class TeamSyncApp extends Application {
         sheetUrlField.setText(workspace.sheetUrl());
         datePicker.setValue(workspace.sessionDate());
         sheetUrlField.setPromptText("Paste a Google Sheets URL");
-        HBox.setHgrow(sheetUrlField, Priority.ALWAYS);
         Button link = new Button("Link sheet");
         link.getStyleClass().add("secondary-button");
-        link.setOnAction(event -> linkSheet());
+        link.setOnAction(_ -> linkSheet());
         Button load = new Button("Load attendance");
         load.getStyleClass().add("primary-button");
-        load.setOnAction(event -> loadAttendance(load));
+        load.setOnAction(_ -> loadAttendance(load));
         Label formatHint = new Label("Sheet format: the first column is Member; date columns use YYYY-MM-DD; use 1 = on time, 0 = absent, L = late, E = leaving early. Duty eligibility controls who may be assigned.");
         formatHint.setWrapText(true);
         formatHint.getStyleClass().add("help-text");
@@ -225,19 +242,22 @@ public final class TeamSyncApp extends Application {
         Button copyMessage = new Button("Copy attendance message");
         copyMessage.getStyleClass().add("secondary-button");
         copyMessage.setDisable(workspace.attendance().isEmpty());
-        copyMessage.setOnAction(event -> copyAttendanceMessage());
+        copyMessage.setOnAction(_ -> copyAttendanceMessage());
+        VBox copyContent = new VBox(10, attendanceMessageArea);
+        if (workspace.attendance().isEmpty()) {
+            copyContent.getChildren().add(emptyState("Load a session to generate a copy-ready attendance list."));
+        }
 
         VBox statistics = attendanceStatistics();
-        Button exportStatistics = new Button("Export statistics as image");
-        exportStatistics.getStyleClass().add("secondary-button");
-        exportStatistics.setDisable(workspace.attendance().isEmpty());
-        exportStatistics.setOnAction(event -> exportStatistics(exportStatistics));
+        Label statisticsSubtitle = new Label("Session statistics");
+        statisticsSubtitle.getStyleClass().add("statistics-subtitle");
+        VBox exports = attendanceStatisticsExports();
         VBox source = sectionCard("Attendance source",
-                styledBox("form-row", 12, sheetUrlField, link), "Session date",
-                styledBox("form-row", 12, datePicker, load), attendanceStatus, formatHint);
+                styledFlow("form-flow", 12, sheetUrlField, link), "Session date",
+                styledFlow("form-flow", 12, datePicker, load), attendanceStatus, formatHint);
         VBox attendanceBody = new VBox(18, source,
-                sectionCard("Copy-ready attendance update", attendanceMessageArea, copyMessage),
-                sectionCard("Session statistics", statistics, exportStatistics));
+                sectionCard("Copy-ready attendance list", copyContent, copyMessage),
+                sectionCard("Attendance statistics", statisticsSubtitle, statistics, exports));
         content.getChildren().setAll(pageContent(attendanceBody));
     }
 
@@ -250,17 +270,16 @@ public final class TeamSyncApp extends Application {
         peopleNeededSpinner.setEditable(true);
         Button add = new Button("Add duty");
         add.getStyleClass().add("primary-button");
-        add.setOnAction(event -> addDuty());
+        add.setOnAction(_ -> addDuty());
         Button update = new Button("Update selected");
         update.getStyleClass().add("secondary-button");
-        update.setOnAction(event -> updateDuty());
+        update.setOnAction(_ -> updateDuty());
         Button delete = new Button("Delete selected");
         delete.getStyleClass().add("danger-button");
-        delete.setOnAction(event -> deleteDuty());
-        HBox nameRow = styledBox("form-row", 12, dutyNameField, peopleNeededSpinner, add);
-        HBox.setHgrow(dutyNameField, Priority.ALWAYS);
-        HBox eligibilityRow = styledBox("form-row", 12, new Label("May be assigned to people:"), onTimeDutyCheck, lateDutyCheck, leavingEarlyDutyCheck);
-        HBox actions = styledBox("action-row", 10, update, delete);
+        delete.setOnAction(_ -> deleteDuty());
+        FlowPane nameRow = styledFlow("form-flow", 12, dutyNameField, peopleNeededSpinner, add);
+        FlowPane eligibilityRow = styledFlow("form-flow", 12, new Label("May be assigned to people:"), onTimeDutyCheck, lateDutyCheck, leavingEarlyDutyCheck);
+        FlowPane actions = styledFlow("action-flow", 10, update, delete);
         VBox tableSection = new VBox(12, dutyTable, actions);
         VBox.setVgrow(dutyTable, Priority.ALWAYS);
         content.getChildren().setAll(pageContent(sectionCard("Add a duty", new VBox(12, nameRow, eligibilityRow), "Current duties", tableSection)));
@@ -271,13 +290,13 @@ public final class TeamSyncApp extends Application {
         setPageHeading("Roster", "Generate an attendance-aware and balanced assignment");
         Button generate = new Button("Generate duty roster");
         generate.getStyleClass().add("primary-button");
-        generate.setOnAction(event -> generateRoster());
+        generate.setOnAction(_ -> generateRoster());
+        boolean rosterReady = !workspace.attendance().isEmpty() && !workspace.duties().isEmpty();
+        generate.setDisable(!rosterReady);
         Label rule = new Label("Eligible members receive one duty before anyone is assigned a second duty.");
         rule.setWrapText(true);
         rule.getStyleClass().add("help-text");
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox toolbar = styledBox("roster-toolbar", 12, rule, spacer, generate);
+        FlowPane toolbar = styledFlow("roster-toolbar", 12, rule, generate);
         rosterArea.setEditable(false);
         rosterArea.setWrapText(false);
         rosterArea.getStyleClass().add("roster-output");
@@ -285,13 +304,13 @@ public final class TeamSyncApp extends Application {
         VBox rosterSection = new VBox(12, toolbar, rosterArea);
         VBox.setVgrow(rosterArea, Priority.ALWAYS);
         rosterHistoryMonthPicker.setValue(workspace.sessionDate());
-        rosterHistoryMonthPicker.setOnAction(event -> refreshRosterHistory());
+        rosterHistoryMonthPicker.setOnAction(_ -> refreshRosterHistory());
         Button exportHistory = new Button("Export month as CSV");
         exportHistory.getStyleClass().add("secondary-button");
-        exportHistory.setOnAction(event -> exportRosterHistory());
-        Label historyHint = new Label("Select any day in the month to compare each member's duty allocations.");
+        exportHistory.setOnAction(_ -> exportRosterHistory());
+        Label historyHint = new Label("Select any day in the month to view the monthly allocation of duties.");
         historyHint.getStyleClass().add("help-text");
-        HBox historyToolbar = styledBox("roster-toolbar", 12, new Label("History month"), rosterHistoryMonthPicker, exportHistory);
+        FlowPane historyToolbar = styledFlow("roster-toolbar", 12, new Label("History month"), rosterHistoryMonthPicker, exportHistory);
         configureRosterHistoryTable();
         refreshRosterHistory();
         VBox historySection = new VBox(12, historyToolbar, historyHint, rosterHistoryTable);
@@ -311,26 +330,25 @@ public final class TeamSyncApp extends Application {
         importantDateNameField.setPromptText("e.g. Equipment briefing");
         importantDateTimeField.setPromptText("HH:mm (24-hour time)");
         importantDateEndTimeField.setPromptText("End: HH:mm");
-        HBox.setHgrow(importantDateNameField, Priority.ALWAYS);
         Button add = new Button("Add event");
         add.getStyleClass().add("primary-button");
-        add.setOnAction(event -> addImportantDate());
+        add.setOnAction(_ -> addImportantDate());
         Button update = new Button("Update selected");
         update.getStyleClass().add("secondary-button");
-        update.setOnAction(event -> updateImportantDate());
+        update.setOnAction(_ -> updateImportantDate());
         Button delete = new Button("Delete selected");
         delete.getStyleClass().add("danger-button");
-        delete.setOnAction(event -> deleteImportantDate());
+        delete.setOnAction(_ -> deleteImportantDate());
 
-        HBox eventFields = styledBox("form-row", 12, importantDateNameField, importantDatePicker,
+        FlowPane eventFields = styledFlow("form-flow", 12, importantDateNameField, importantDatePicker,
                 importantDateTimeField, importantDateEndTimeField, add);
-        HBox reminderFields = styledBox("form-row", 12, reminderToggle, reminderOptionBox, customReminderSpinner, customReminderLabel);
+        FlowPane reminderFields = styledFlow("form-flow", 12, reminderToggle, reminderOptionBox, customReminderSpinner, customReminderLabel);
         Label timeHint = new Label("Use 24-hour time in HH:mm format, for example 09:30 or 14:00. Events must end after they start.");
         timeHint.getStyleClass().add("help-text");
         Label reminderHint = new Label("Reminders appear while TeamSync is open. Choose a standard lead time or set your own number of hours.");
         reminderHint.setWrapText(true);
         reminderHint.getStyleClass().add("help-text");
-        HBox actions = styledBox("action-row", 10, update, delete);
+        FlowPane actions = styledFlow("action-flow", 10, update, delete);
         VBox tableSection = new VBox(12, importantDatesTable, actions);
         VBox.setVgrow(importantDatesTable, Priority.ALWAYS);
         VBox body = new VBox(18,
@@ -385,17 +403,17 @@ public final class TeamSyncApp extends Application {
         if (!dutyTable.getColumns().isEmpty()) return;
         TableColumn<Duty, String> name = new TableColumn<>("Duty");
         name.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().name()));
-        name.setCellFactory(column -> wrappingCell());
+        name.setCellFactory(_ -> wrappingCell());
         TableColumn<Duty, Number> people = new TableColumn<>("People needed");
         people.setCellValueFactory(cell -> new javafx.beans.property.SimpleIntegerProperty(cell.getValue().peopleNeeded()));
         TableColumn<Duty, String> eligibility = new TableColumn<>("Eligible attendance");
         eligibility.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(dutyEligibilityLabel(cell.getValue())));
-        eligibility.setCellFactory(column -> wrappingCell());
+        eligibility.setCellFactory(_ -> wrappingCell());
         dutyTable.getColumns().setAll(List.of(name, people, eligibility));
         dutyTable.setItems(duties);
         dutyTable.setPlaceholder(new Label("No duties yet. Add the first job above."));
         dutyTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_NEXT_COLUMN);
-        dutyTable.getSelectionModel().selectedItemProperty().addListener((observable, oldDuty, selectedDuty) -> {
+        dutyTable.getSelectionModel().selectedItemProperty().addListener((_, _, selectedDuty) -> {
             if (selectedDuty != null) {
                 dutyNameField.setText(selectedDuty.name());
                 peopleNeededSpinner.getValueFactory().setValue(selectedDuty.peopleNeeded());
@@ -422,12 +440,12 @@ public final class TeamSyncApp extends Application {
         customReminderSpinner.setVisible(false);
         customReminderSpinner.setManaged(false);
         reminderOptionBox.setDisable(true);
-        reminderToggle.selectedProperty().addListener((observable, oldValue, selected) -> updateReminderFields());
-        reminderOptionBox.valueProperty().addListener((observable, oldValue, selected) -> updateReminderFields());
+        reminderToggle.selectedProperty().addListener((_, _, _) -> updateReminderFields());
+        reminderOptionBox.valueProperty().addListener((_, _, _) -> updateReminderFields());
 
         TableColumn<ImportantDate, String> name = new TableColumn<>("Event");
         name.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().name()));
-        name.setCellFactory(column -> wrappingCell());
+        name.setCellFactory(_ -> wrappingCell());
         TableColumn<ImportantDate, String> date = new TableColumn<>("Date");
         date.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(
                 cell.getValue().date().format(DateTimeFormatter.ofPattern("EEE, d MMM uuuu"))));
@@ -437,12 +455,12 @@ public final class TeamSyncApp extends Application {
         endTime.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().endTime().format(TIME_FORMATTER)));
         TableColumn<ImportantDate, String> reminder = new TableColumn<>("Reminder");
         reminder.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().reminderLabel()));
-        reminder.setCellFactory(column -> wrappingCell());
+        reminder.setCellFactory(_ -> wrappingCell());
         importantDatesTable.getColumns().setAll(List.of(name, date, time, endTime, reminder));
         importantDatesTable.setItems(importantDates);
         importantDatesTable.setPlaceholder(new Label("No important dates yet. Add the first event above."));
         importantDatesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_NEXT_COLUMN);
-        importantDatesTable.getSelectionModel().selectedItemProperty().addListener((observable, oldEvent, selectedEvent) -> {
+        importantDatesTable.getSelectionModel().selectedItemProperty().addListener((_, _, selectedEvent) -> {
             if (selectedEvent != null) populateImportantDateFields(selectedEvent);
         });
     }
@@ -486,7 +504,7 @@ public final class TeamSyncApp extends Application {
         for (String dutyName : report.dutyNames()) {
             TableColumn<MonthlyRosterHistory.MemberRow, String> duty = new TableColumn<>(dutyName);
             duty.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(formatAllocationDates(cell.getValue().datesFor(dutyName))));
-            duty.setCellFactory(column -> wrappingCell());
+            duty.setCellFactory(_ -> wrappingCell());
             columns.add(duty);
         }
         TableColumn<MonthlyRosterHistory.MemberRow, Number> total = new TableColumn<>("Total");
@@ -524,7 +542,7 @@ public final class TeamSyncApp extends Application {
                 return attendanceService.loadAttendance(workspace.sheetUrl(), date);
             }
         };
-        task.setOnSucceeded(event -> {
+        task.setOnSucceeded(_ -> {
             workspace.setSessionDate(date);
             workspace.setAttendance(task.getValue());
             saveWorkspace();
@@ -533,7 +551,7 @@ public final class TeamSyncApp extends Application {
             loadButton.setDisable(false);
             showAttendance();
         });
-        task.setOnFailed(event -> {
+        task.setOnFailed(_ -> {
             loadButton.setDisable(false);
             attendanceStatus.setText("Attendance could not be loaded.");
             showError(rootMessage(task.getException()));
@@ -742,7 +760,6 @@ public final class TeamSyncApp extends Application {
     private String attendanceSummary() { return workspace.attendance().isEmpty() ? "No attendance loaded yet." : attendingCount() + " attending member(s) for " + workspace.sessionDate() + "."; }
     private String dutySummary() { return workspace.duties().isEmpty() ? "No duties have been added." : workspace.duties().size() + " duty type(s) added."; }
     private String rosterSummary() { return workspace.attendance().isEmpty() || workspace.duties().isEmpty() ? "Attendance and duties are needed first." : "Ready to generate assignments."; }
-    private int confirmedCount() { return (int) workspace.attendance().stream().filter(AttendanceRecord::isConfirmed).count(); }
     private int attendingCount() { return (int) workspace.attendance().stream().filter(AttendanceRecord::attended).count(); }
     private int count(AttendanceStatus status) {
         return (int) workspace.attendance().stream().filter(record -> record.status() == status).count();
@@ -755,16 +772,60 @@ public final class TeamSyncApp extends Application {
     private VBox attendanceStatistics() {
         VBox statistics = new VBox(12);
         statistics.getStyleClass().add("statistics-export");
-        Label title = new Label("Attendance snapshot — " + workspace.sessionDate());
+        Label title = new Label("Selected session summary" + (workspace.attendance().isEmpty() ? "" : " — " + workspace.sessionDate()));
         title.getStyleClass().add("statistics-title");
-        HBox cards = new HBox(12,
-                statisticCard(attendingCount() + " / " + workspace.attendance().size(), "Attended", percentage(attendingCount(), workspace.attendance().size()) + " attendance rate"),
-                statisticCard(count(AttendanceStatus.ON_TIME) + " / " + Math.max(attendingCount(), 1), "On time", percentage(count(AttendanceStatus.ON_TIME), attendingCount()) + " of attendees"),
-                statisticCard(String.valueOf(count(AttendanceStatus.LATE)), "Late arrivals", percentage(count(AttendanceStatus.LATE), attendingCount()) + " of attendees"),
-                statisticCard(String.valueOf(count(AttendanceStatus.LEFT_EARLY)), "Early departures", percentage(count(AttendanceStatus.LEFT_EARLY), attendingCount()) + " of attendees"));
-        cards.getStyleClass().add("statistics-cards");
+        if (workspace.attendance().isEmpty()) {
+            statistics.getChildren().addAll(title,
+                    emptyState("No session attendance is loaded. Choose a session date and load attendance to see its summary."));
+            return statistics;
+        }
+        VBox attended = statisticCard(attendingCount() + " / " + workspace.attendance().size(), "Attended", percentage(attendingCount(), workspace.attendance().size()) + " attendance rate");
+        VBox onTime = statisticCard(count(AttendanceStatus.ON_TIME) + " / " + Math.max(attendingCount(), 1), "On time", percentage(count(AttendanceStatus.ON_TIME), attendingCount()) + " of attendees");
+        VBox late = statisticCard(String.valueOf(count(AttendanceStatus.LATE)), "Late arrivals", percentage(count(AttendanceStatus.LATE), attendingCount()) + " of attendees");
+        VBox early = statisticCard(String.valueOf(count(AttendanceStatus.LEFT_EARLY)), "Early departures", percentage(count(AttendanceStatus.LEFT_EARLY), attendingCount()) + " of attendees");
+        FlowPane cards = styledFlow("statistics-cards", 12,
+                attended, onTime, late, early);
+        configureStatisticCardSizes(cards, attended, onTime, late, early);
         statistics.getChildren().addAll(title, cards);
         return statistics;
+    }
+
+    private VBox attendanceStatisticsExports() {
+        Label title = new Label("Monthly reports");
+        title.getStyleClass().add("statistics-subsection-title");
+        Label description = new Label("Choose the month to include in each report. These exports use every marked session in that month.");
+        description.getStyleClass().add("statistic-detail");
+        attendanceReportMonthPicker.setValue(attendanceReportMonthPicker.getValue() == null
+                ? workspace.sessionDate() : attendanceReportMonthPicker.getValue());
+        Label monthHint = new Label("Report month (choose any day within the month)");
+        monthHint.getStyleClass().add("field-label");
+        VBox exports = new VBox(12, title, description, monthHint, attendanceReportMonthPicker,
+                attendanceStatisticExport(AttendanceStatistic.BY_SESSION),
+                attendanceStatisticExport(AttendanceStatistic.INDIVIDUAL));
+        exports.getStyleClass().add("statistics-export-options");
+        return exports;
+    }
+
+    private VBox attendanceStatisticExport(AttendanceStatistic statistic) {
+        Label title = new Label(statistic.label);
+        title.getStyleClass().add("statistic-label");
+        boolean available = !workspace.attendance().isEmpty();
+        Label description = new Label(available
+                ? "Export this monthly statistic as an image or CSV file."
+                : "Load a session to unlock this monthly report.");
+        description.getStyleClass().add("statistic-detail");
+        Button imageExport = new Button("Export as image");
+        imageExport.getStyleClass().add("secondary-button");
+        imageExport.setDisable(!available);
+        imageExport.setOnAction(_ -> exportMonthlyStatistic(imageExport, statistic, true));
+        Button csvExport = new Button("Export as CSV");
+        csvExport.getStyleClass().add("secondary-button");
+        csvExport.setDisable(!available);
+        csvExport.setOnAction(_ -> exportMonthlyStatistic(csvExport, statistic, false));
+        FlowPane actions = styledFlow("statistics-export-actions", 10, imageExport, csvExport);
+        VBox option = new VBox(5, title, description, actions);
+        option.getStyleClass().add("statistics-export-option");
+        return option;
     }
 
     private VBox statisticCard(String value, String label, String detail) {
@@ -781,6 +842,13 @@ public final class TeamSyncApp extends Application {
         return card;
     }
 
+    private Label emptyState(String text) {
+        Label label = new Label(text);
+        label.setWrapText(true);
+        label.getStyleClass().add("empty-state");
+        return label;
+    }
+
     private String percentage(int numerator, int denominator) {
         if (denominator == 0) return "0%";
         return Math.round(numerator * 100.0 / denominator) + "%";
@@ -793,34 +861,45 @@ public final class TeamSyncApp extends Application {
         attendanceStatus.setText("Attendance update copied to the clipboard.");
     }
 
-    private void exportStatistics(Button exportButton) {
+    private void exportMonthlyStatistic(Button exportButton, AttendanceStatistic statistic, boolean asImage) {
+        LocalDate reportMonthDate = attendanceReportMonthPicker.getValue();
+        if (reportMonthDate == null) {
+            showError("Choose a report month before exporting.");
+            return;
+        }
+        YearMonth reportMonth = YearMonth.from(reportMonthDate);
         FileChooser chooser = new FileChooser();
-        chooser.setTitle("Export attendance statistics");
-        chooser.setInitialFileName("attendance-statistics-" + workspace.sessionDate() + ".png");
-        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG image", "*.png"));
+        String extension = asImage ? "png" : "csv";
+        chooser.setTitle("Export " + statistic.label.toLowerCase(Locale.ROOT));
+        chooser.setInitialFileName(statistic.fileStem + "-" + reportMonth + "." + extension);
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(asImage ? "PNG image" : "CSV file", "*." + extension));
         File target = chooser.showSaveDialog(content.getScene().getWindow());
         if (target == null) return;
         exportButton.setDisable(true);
-        attendanceStatus.setText("Preparing monthly attendance statistics for export.");
+        attendanceStatus.setText("Preparing " + statistic.label.toLowerCase(Locale.ROOT) + " for export.");
         Task<MonthlyAttendanceReport> task = new Task<>() {
             @Override protected MonthlyAttendanceReport call() throws Exception {
-                return attendanceService.loadMonthlyAttendance(workspace.sheetUrl(), YearMonth.from(workspace.sessionDate()));
+                return attendanceService.loadMonthlyAttendance(workspace.sheetUrl(), reportMonth);
             }
         };
-        task.setOnSucceeded(event -> {
+        task.setOnSucceeded(_ -> {
             try {
-                WritableImage image = snapshotExportStatistics(task.getValue());
-                ImageIO.write(SwingFXUtils.fromFXImage(image, null), "png", target);
-                attendanceStatus.setText("Statistics exported to " + target.getName() + ".");
+                if (asImage) {
+                    WritableImage image = snapshotMonthlyStatistic(task.getValue(), statistic);
+                    ImageIO.write(SwingFXUtils.fromFXImage(image, null), "png", target);
+                } else {
+                    Files.writeString(target.toPath(), monthlyAttendanceCsv(task.getValue(), statistic), StandardCharsets.UTF_8);
+                }
+                attendanceStatus.setText(statistic.label + " exported to " + target.getName() + ".");
             } catch (IOException error) {
-                showError("Could not export the statistics image: " + error.getMessage());
+                showError("Could not export " + statistic.label.toLowerCase(Locale.ROOT) + ": " + error.getMessage());
             } finally {
                 exportButton.setDisable(false);
             }
         });
-        task.setOnFailed(event -> {
+        task.setOnFailed(_ -> {
             exportButton.setDisable(false);
-            attendanceStatus.setText("Statistics could not be exported.");
+            attendanceStatus.setText(statistic.label + " could not be exported.");
             showError(rootMessage(task.getException()));
         });
         Thread exporter = new Thread(task, "attendance-statistics-exporter");
@@ -828,46 +907,56 @@ public final class TeamSyncApp extends Application {
         exporter.start();
     }
 
-    private WritableImage snapshotExportStatistics(MonthlyAttendanceReport report) {
-        VBox exportView = new VBox(18, attendanceStatistics(), monthlyAttendanceStatistics(report));
+    private WritableImage snapshotMonthlyStatistic(MonthlyAttendanceReport report, AttendanceStatistic statistic) {
+        VBox exportView = new VBox(18, monthlyAttendanceStatistic(report, statistic));
         exportView.getStyleClass().add("export-sheet");
         exportView.setPrefWidth(920);
         Scene exportScene = new Scene(exportView);
-        exportScene.getStylesheets().add(TeamSyncApp.class.getResource("/teamsync/theme.css").toExternalForm());
+        exportScene.getStylesheets().add(themeStylesheet());
         exportView.applyCss();
         exportView.resize(920, exportView.prefHeight(920));
         exportView.layout();
         return exportView.snapshot(new SnapshotParameters(), null);
     }
 
-    private VBox monthlyAttendanceStatistics(MonthlyAttendanceReport report) {
+    private String monthlyAttendanceCsv(MonthlyAttendanceReport report, AttendanceStatistic statistic) {
+        StringBuilder csv = new StringBuilder();
+        if (statistic == AttendanceStatistic.BY_SESSION) {
+            csv.append("Date,Attended members,Marked members,Attendance percentage\n");
+            for (MonthlyAttendanceReport.SessionAttendance session : report.sessions()) {
+                csv.append(session.date()).append(',').append(session.attendedMembers()).append(',')
+                        .append(session.markedMembers()).append(',').append(session.percentage()).append("%\n");
+            }
+        } else {
+            csv.append("Member,Attended sessions,Marked sessions,Attendance percentage\n");
+            for (MonthlyAttendanceReport.MemberAttendance member : report.members()) {
+                csv.append(csvField(member.memberName())).append(',').append(member.attendedSessions()).append(',')
+                        .append(member.markedSessions()).append(',').append(member.percentage()).append("%\n");
+            }
+        }
+        return csv.toString();
+    }
+
+    private VBox monthlyAttendanceStatistic(MonthlyAttendanceReport report, AttendanceStatistic statistic) {
         String monthName = report.month().getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault())
                 + " " + report.month().getYear();
-        Label title = new Label("Monthly attendance — " + monthName);
+        Label title = new Label(statistic.label + " — " + monthName);
         title.getStyleClass().add("statistics-title");
         Label explanation = new Label("Late arrivals and early departures count as attended. Percentages use marked sessions only.");
         explanation.getStyleClass().add("statistic-detail");
-        Label monthlyOverall = new Label("Monthly team attendance: " + report.overallAttendancePercentage() + "% ("
-                + report.attendedMembersAcrossSessions() + " / " + report.markedMembersAcrossSessions() + " marked records)");
-        monthlyOverall.getStyleClass().add("monthly-overall-statistic");
-        VBox sessionRows = new VBox(5);
-        report.sessions().forEach(session -> sessionRows.getChildren().add(monthlyRow(
-                session.date().toString(), session.attendedMembers() + " / " + session.markedMembers()
-                        + " attended", session.percentage() + "%")));
-        VBox memberRows = new VBox(5);
-        report.members().forEach(member -> memberRows.getChildren().add(monthlyRow(
-                member.memberName(), member.attendedSessions() + " / " + member.markedSessions() + " sessions",
-                member.percentage() + "%")));
-        VBox monthly = new VBox(12, title, explanation, monthlyOverall, sectionLabel("Attendance by session"), sessionRows,
-                sectionLabel("Individual attendance"), memberRows);
+        VBox rows = new VBox(5);
+        if (statistic == AttendanceStatistic.BY_SESSION) {
+            report.sessions().forEach(session -> rows.getChildren().add(monthlyRow(
+                    session.date().toString(), session.attendedMembers() + " / " + session.markedMembers()
+                            + " attended", session.percentage() + "%")));
+        } else {
+            report.members().forEach(member -> rows.getChildren().add(monthlyRow(
+                    member.memberName(), member.attendedSessions() + " / " + member.markedSessions() + " sessions",
+                    member.percentage() + "%")));
+        }
+        VBox monthly = new VBox(12, title, explanation, rows);
         monthly.getStyleClass().add("statistics-export");
         return monthly;
-    }
-
-    private Label sectionLabel(String text) {
-        Label label = new Label(text);
-        label.getStyleClass().add("statistic-label");
-        return label;
     }
 
     private HBox monthlyRow(String primary, String secondary, String percentage) {
@@ -891,8 +980,8 @@ public final class TeamSyncApp extends Application {
         dutyTable.getSelectionModel().clearSelection();
     }
 
-    private static CheckBox selectedCheckBox(String label) {
-        CheckBox checkBox = new CheckBox(label);
+    private static CheckBox selectedOnTimeCheckBox() {
+        CheckBox checkBox = new CheckBox("On time");
         checkBox.setSelected(true);
         return checkBox;
     }
@@ -946,15 +1035,10 @@ public final class TeamSyncApp extends Application {
         return button;
     }
 
-    private HBox styledBox(String styleClass, double spacing, Node... nodes) {
-        HBox box = new HBox(spacing, nodes);
-        box.getStyleClass().add(styleClass); box.setAlignment(Pos.CENTER_LEFT);
-        return box;
-    }
-
     private FlowPane styledFlow(String styleClass, double spacing, Node... nodes) {
         FlowPane pane = new FlowPane(spacing, spacing, nodes);
         pane.getStyleClass().add(styleClass);
+        pane.setAlignment(Pos.CENTER_LEFT);
         return pane;
     }
 
@@ -962,8 +1046,19 @@ public final class TeamSyncApp extends Application {
         for (VBox card : cardsToSize) {
             card.prefWidthProperty().bind(Bindings.createDoubleBinding(() -> {
                 double availableWidth = cards.getWidth();
-                if (availableWidth >= 760) return (availableWidth - 32) / 3;
-                if (availableWidth >= 500) return (availableWidth - 16) / 2;
+                if (availableWidth >= 692) return Math.floor((availableWidth - 32) / 3);
+                if (availableWidth >= 456) return Math.floor((availableWidth - 16) / 2);
+                return availableWidth;
+            }, cards.widthProperty()));
+        }
+    }
+
+    private void configureStatisticCardSizes(FlowPane cards, VBox... cardsToSize) {
+        for (VBox card : cardsToSize) {
+            card.prefWidthProperty().bind(Bindings.createDoubleBinding(() -> {
+                double availableWidth = cards.getWidth();
+                if (availableWidth >= 556) return Math.floor((availableWidth - 36) / 4);
+                if (availableWidth >= 272) return Math.floor((availableWidth - 12) / 2);
                 return availableWidth;
             }, cards.widthProperty()));
         }
@@ -973,8 +1068,13 @@ public final class TeamSyncApp extends Application {
         TableCell<T, String> cell = new TableCell<>();
         cell.setWrapText(true);
         cell.setTextOverrun(OverrunStyle.CLIP);
-        cell.itemProperty().addListener((observable, oldValue, newValue) -> cell.setText(newValue));
+        cell.itemProperty().addListener((_, _, newValue) -> cell.setText(newValue));
         return cell;
+    }
+
+    private static String themeStylesheet() {
+        return Objects.requireNonNull(TeamSyncApp.class.getResource("/teamsync/theme.css"),
+                "Missing TeamSync stylesheet resource").toExternalForm();
     }
 
     private void saveWorkspace() {
