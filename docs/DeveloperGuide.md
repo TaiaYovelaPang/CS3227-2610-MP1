@@ -46,12 +46,12 @@ sequenceDiagram
     participant Sheet as Google Sheets CSV export
     participant WS as Workspace
     participant Store as WorkspaceStore
-    Manager->>UI: Select date; click Load attendance
+    Manager->>UI: Select date and click Load attendance
     UI->>UI: Validate date and linked sheet
     UI->>AS: loadAttendance(sheetUrl, date) [background task]
     AS->>Sheet: GET exported CSV
     Sheet-->>AS: CSV rows
-    AS->>AS: Validate headers; parse 1/0/L/E
+    AS->>AS: Validate headers and parse 1/0/L/E
     AS-->>UI: List<AttendanceRecord>
     UI->>WS: Set session date and attendance
     UI->>Store: save(workspace)
@@ -76,7 +76,7 @@ sequenceDiagram
     RS->>RS: Filter by duty eligibility
     RS->>RS: Assign least-flexible duties first
     RS->>RS: Prefer fewer same-day, then historical assignments
-    RS->>WS: Replace current-date history; add assignments
+    RS->>WS: Replace current-date history and add assignments
     RS-->>UI: List<RosterAssignment>
     UI->>Store: save(workspace)
     UI-->>Manager: Display roster and any unfilled slots
@@ -92,7 +92,7 @@ sequenceDiagram
     participant Validator as ImportantDateValidator
     participant WS as Workspace
     participant Store as WorkspaceStore
-    Manager->>UI: Enter details; click Add event
+    Manager->>UI: Enter details and click Add event
     UI->>Date: Construct event from form values
     UI->>Validator: validate(candidate, saved events, now)
     Validator-->>UI: Valid event
@@ -100,7 +100,7 @@ sequenceDiagram
     UI->>Store: save(workspace)
     UI-->>Manager: Refresh saved-event list
     loop Every 30 seconds while app is open
-        UI->>WS: Remove finished events; inspect reminders
+        UI->>WS: Remove finished events and inspect reminders
         UI-->>Manager: Display reminder in its window
     end
 ```
