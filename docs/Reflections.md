@@ -1,10 +1,26 @@
+# Reflection
+
 A major challenge I encountered during this project was dealing with hallucination or misleading responses from the AI, particularly when debugging. One example occurred when I wanted the application to account for members who arrived late or left early when generating the attendance list. My initial prompt focused mainly on deciding how these attendance states should be represented in the spreadsheet and generating the corresponding attendance list. I formulated the prompt this way because, at that stage, I assumed that once the desired behaviour was clearly specified, the agent would be able to identify the relevant parts of the application and implement the logic correctly.
 
 However, when I manually checked the generated attendance list against the spreadsheet data, I realised that members who arrived late or left early were being ignored. To address this, I moved from a relatively general prompt to k-shot prompting, where I provided an example input together with the expected output. I expected that a concrete example would reduce ambiguity and make the required behaviour clearer. However, this still did not solve the problem. More confusingly, the AI stated that the application should work correctly for the example I had provided. This made me realise that providing examples is not necessarily sufficient when the underlying problem is not in the transformation logic itself, but in how data is represented or passed between different parts of the application.
 
+**Attendance input:**
+
+![Input attendance.png](../images/Input%20attendance.png)
+
+**Wrong output:**
+
+![Wrong output.png](../images/Wrong%20output.png)
+
+**AI response:** 
+![L:E done by AI.png](../images/L%3AE%20done%20by%20AI.png)
+
 At this point, I attempted to verify the AI’s conclusion manually by reading through the relevant sections of the code. I initially suspected that one particular section was responsible for the error, but further inspection showed that this was not the case. This was also where manual debugging became difficult for me. Although I could understand individual sections of the code, tracing the data across multiple components and identifying where its representation changed required a broader understanding of the codebase.
 
 I next tried prompting the agent to “criticize your work”. I had previously found this useful because it encouraged the AI to reconsider its earlier assumptions rather than immediately defending its original solution. However, it was ineffective in this case. I therefore attempted to obtain independent opinions by providing the potentially relevant code to Claude and Gemini. Interestingly, both also concluded that the code should behave as expected. The agreement between multiple models made me suspect that the problem might not be obvious from static inspection of the code and could instead involve how the data was being processed at runtime. This experience also showed me that agreement between multiple LLMs should not be treated as verification. Different models can make similar assumptions when they are given the same incomplete view of a problem.
+
+**Claude's response:**
+![Claude output.png](../images/Claude%20output.png)
 
 I therefore searched online for prompting approaches that might be more appropriate for runtime bugs. I found a Reddit discussion suggesting the phrase “do thought experiments”, with one user describing it as a way of encouraging the model to trace runtime state rather than only reading the code statically. I adapted this idea and asked Codex to reason through what would happen to the data as the application executed. This produced a different diagnosis: the CSV endpoint was returning the late/early states as blank values, which subsequently caused those members to be ignored by the attendance processing logic. After correcting this behaviour, I tested the application again and confirmed that latecomers and early departures were now included correctly.
 
@@ -14,17 +30,31 @@ After resolving this issue, I encountered another problem where I could no longe
 
 More broadly, the project also helped me understand when different prompting strategies were useful. At the beginning, I considered using k-shot prompting by giving an example for every function that I wanted the application to support. While drafting the prompt, however, I realised that doing so would require substantial context about the application and numerous examples. Constructing the prompt was beginning to require more effort than the value I expected to gain from it. I therefore chose a zero-shot chain-of-thought style approach for developing the initial MVP instead. For this stage, I found the approach useful because the agent broke the application into smaller logical components and explained how they related to one another. Compared with previous experiences where I had simply “vibe coded”, being able to follow the proposed structure made it easier for me to understand and evaluate what was being built rather than accepting generated code without understanding its logic.
 
-For the initial UI design, I used a tree-of-thoughts prompt in which I asked the AI to propose three possible designs and compare their advantages and disadvantages. This became one of the prompting strategies I found most useful. I often enter the discussion with a particular design already in mind, but my preferred solution may not necessarily be the most appropriate one from the user’s perspective. My application design experience is still relatively limited, so generating several alternatives exposed me to considerations that I might not have identified independently. Comparing the trade offs also shifted the AI’s role from simply implementing my first idea to helping me evaluate possible design decisions. This was particularly useful for this project because I did not have an actual group of end users from whom I could repeatedly gather feedback. I could also combine useful elements from several proposed designs for “better” functionality.
+For the initial UI design, I used a tree-of-thoughts prompt in which I asked the AI to propose three possible designs and compare their advantages and disadvantages. 
+
+**3 UI design recommended by AI:**
+![TOT UI.png](../images/TOT%20UI.png)
+
+This became one of the prompting strategies I found most useful. I often enter the discussion with a particular design already in mind, but my preferred solution may not necessarily be the most appropriate one from the user’s perspective. My application design experience is still relatively limited, so generating several alternatives exposed me to considerations that I might not have identified independently. Comparing the trade offs also shifted the AI’s role from simply implementing my first idea to helping me evaluate possible design decisions. This was particularly useful for this project because I did not have an actual group of end users from whom I could repeatedly gather feedback. I could also combine useful elements from several proposed designs for “better” functionality.
 
 One extension I considered was using self-consistency by asking the AI the same design question several times and comparing the independently generated solutions. I did not do so because of the additional token usage, so I stopped after obtaining a few satisfactory options. In retrospect, it could have been a useful experiment. For example, substantially different responses might have revealed additional design possibilities.
 
 During the middle stages of development, I found that specialised prompting techniques were often unnecessary. Many changes were small and sufficiently well defined that simply listing the requirements produced the desired result. Problems generally arose when my requirements left room for interpretation. For example, I asked the agent to create a roster history section that recorded each member’s monthly duty count for accountability. Because I did not clearly explain what “history” meant in the context of my application, the AI proposed that each assignment should record states such as “assigned”, “acknowledged”, “completed” and “missed”, together with notes and timestamps. This was a reasonable assumption for a generic duty management system, but it did not match my intended application. The system was only meant to assist managers in allocating duties and incrementing each member’s duty count based on those allocations.
+
+**Prompt given for roster history:**
+![Prompt - roster.png](../images/Prompt%20-%20roster.png)
+
+**Response given by AI:**
+![Roster reply.png](../images/Roster%20reply.png)
 
 This example made me more aware of the assumptions an LLM makes when information is missing. The model was not necessarily producing an unreasonable design, instead, it was filling a gap in my prompt using patterns associated with similar management applications. This reinforces the importance of reviewing generated features based on the actual purpose of my application rather than assuming that additional functionality is automatically beneficial.
 
 I also became more aware that prompting is not always the most efficient solution. Towards the end of the project, I was changing terminology in the application to make the interface clearer. While writing a prompt describing one of these changes, I realised that I could simply search the repository for the phrase and replace the relevant occurrences myself. For a small and deterministic change such as this, explaining the task to an AI, waiting for it to inspect the repository and then verifying its changes could take longer than editing the code manually. This helped me recognise that effective AI assisted development is not about using AI for every task, but about deciding when the potential benefit of the model exceeds the overhead of prompting and verification.
 
 Finally, I experimented with role playing by asking the agent to act as a senior UI designer and critique the completed interface. The response identified several usability and design considerations that I had not previously considered, including points that had not surfaced during our earlier UI development discussions. I found this particularly useful because the role prompt changed the perspective from which the same application was evaluated. Rather than asking the model to continue implementing my requirements, I was explicitly asking it to evaluate those requirements from the perspective of someone with UI expertise. At my current level of experience, this provided a useful way of identifying potential blind spots. Nevertheless, these suggestions still required my judgement because adopting every recommendation would not necessarily improve the application or align with its intended users.
+
+**Roleplay prompt and output:**
+![Roleplay.png](../images/Roleplay.png)
 
 Overall, this project changed my understanding of prompt engineering from finding a single “best” prompt to selecting a prompting strategy that matches the task. At the same time, some of the most important things I learnt came from cases where prompting did not work, which really embodies the phrase “trial and error”. Most importantly, I learnt that an LLM’s response should be treated as a hypothesis to be tested rather than as confirmation that the application is correct. Throughout the project, the most reliable verification ultimately came from running the application, comparing its actual output with the expected behaviour, and manually inspecting the relevant code and data flow when they differed.
 
