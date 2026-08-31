@@ -18,6 +18,8 @@ public final class TeamSyncSelfTest {
         verifiesMonthlyRosterHistoryGroupsAssignmentsByMemberAndDuty();
         verifiesImportantDateReminderConfiguration();
         verifiesSingleDutyBeforeRepeats();
+        verifiesDutiesCanIncludeLateAndEarlyLeavingMembers();
+        verifiesDuplicateDutyNamesAreRejectedIgnoringCase();
         System.out.println("TeamSync self-test passed.");
     }
 
@@ -127,6 +129,48 @@ public final class TeamSyncSelfTest {
         List<RosterAssignment> repeatsRequired = new RosterService().generate(workspace);
         List<String> secondPass = repeatsRequired.stream().flatMap(assignment -> assignment.members().stream()).toList();
         if (secondPass.size() != 4 || Set.copyOf(secondPass).size() != 3) throw new AssertionError("Exactly one repeated assignment is expected when four slots need three attendees.");
+    }
+
+    private static void verifiesDuplicateDutyNamesAreRejectedIgnoringCase() {
+        Duty existing = new Duty("Equipment Set-up", 1);
+        List<Duty> duties = List.of(existing);
+        boolean duplicateRejected = false;
+        try {
+            DutyValidator.ensureUniqueName(duties, "  EQUIPMENT SET-UP  ", null);
+        } catch (IllegalArgumentException error) {
+            duplicateRejected = error.getMessage().contains("already exists");
+        }
+        if (!duplicateRejected) throw new AssertionError("Duty names must be unique regardless of capitalization.");
+
+        DutyValidator.ensureUniqueName(duties, "Equipment Setup", null);
+        DutyValidator.ensureUniqueName(duties, "EQUIPMENT SET-UP", existing.id());
+    }
+
+    private static void verifiesDutiesCanIncludeLateAndEarlyLeavingMembers() {
+        Workspace workspace = new Workspace();
+        workspace.setSessionDate(LocalDate.parse("2026-08-20"));
+        workspace.setAttendance(List.of(
+                new AttendanceRecord("Amy", AttendanceStatus.ON_TIME),
+                new AttendanceRecord("Ben", AttendanceStatus.LATE),
+                new AttendanceRecord("Chen", AttendanceStatus.LEFT_EARLY)));
+        Duty setUp = new Duty("Set up", 1);
+        setUp.setEligibleStatuses(Set.of(AttendanceStatus.LEFT_EARLY));
+        Duty packDown = new Duty("Pack down", 1);
+        packDown.setEligibleStatuses(Set.of(AttendanceStatus.LATE));
+        workspace.duties().addAll(List.of(setUp, packDown));
+
+        List<RosterAssignment> roster = new RosterService().generate(workspace);
+        if (!roster.get(0).members().equals(List.of("Chen")) || !roster.get(1).members().equals(List.of("Ben"))) {
+            throw new AssertionError("Each duty must only select members whose attendance status it allows.");
+        }
+
+        boolean emptyEligibilityRejected = false;
+        try {
+            setUp.setEligibleStatuses(Set.of());
+        } catch (IllegalArgumentException error) {
+            emptyEligibilityRejected = error.getMessage().contains("at least one");
+        }
+        if (!emptyEligibilityRejected) throw new AssertionError("Each duty must allow at least one attendance status.");
     }
 
     private static void verifiesMonthlyRosterHistoryGroupsAssignmentsByMemberAndDuty() {
