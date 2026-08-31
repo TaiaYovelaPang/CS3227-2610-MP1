@@ -3,6 +3,7 @@ package teamsync;
 import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,5 +29,10 @@ public final class Workspace implements Serializable {
     public List<ImportantDate> importantDates() {
         if (importantDates == null) importantDates = new ArrayList<>();
         return importantDates;
+    }
+
+    /** Removes events whose end time has passed and reports whether saved data changed. */
+    public boolean removePastImportantDates(LocalDateTime now) {
+        return importantDates().removeIf(event -> !event.endsAt().isAfter(now));
     }
 }

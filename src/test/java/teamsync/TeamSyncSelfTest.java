@@ -1,6 +1,7 @@
 package teamsync;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
@@ -17,6 +18,8 @@ public final class TeamSyncSelfTest {
         verifiesMonthlyPercentagesIncludeLateAndEarlyAttendance();
         verifiesMonthlyRosterHistoryGroupsAssignmentsByMemberAndDuty();
         verifiesImportantDateReminderConfiguration();
+        verifiesImportantDateSchedulingValidation();
+        verifiesPastImportantDatesAreRemovedAfterTheyEnd();
         verifiesSingleDutyBeforeRepeats();
         verifiesDutiesCanIncludeLateAndEarlyLeavingMembers();
         verifiesDuplicateDutyNamesAreRejectedIgnoringCase();
@@ -189,14 +192,60 @@ public final class TeamSyncSelfTest {
 
     private static void verifiesImportantDateReminderConfiguration() {
         ImportantDate event = new ImportantDate("Team briefing", LocalDate.parse("2026-09-01"), LocalTime.of(9, 30),
-                ReminderOption.CUSTOM, 45);
-        if (!event.hasReminder() || event.reminderMinutesBefore() != 45
-                || !event.reminderLabel().equals("Custom: 45 min before")) {
+                ReminderOption.CUSTOM, 2 * 60);
+        if (!event.hasReminder() || event.reminderMinutesBefore() != 2 * 60
+                || !event.reminderLabel().equals("Custom: 2 hour(s) before")) {
             throw new AssertionError("Important dates must retain their custom reminder lead time.");
         }
         event.update("Team briefing", LocalDate.parse("2026-09-01"), LocalTime.of(9, 30), null, 0);
         if (event.hasReminder() || !event.reminderLabel().equals("Off")) {
             throw new AssertionError("Important dates must allow reminders to be turned off.");
+        }
+    }
+
+    private static void verifiesImportantDateSchedulingValidation() {
+        LocalDateTime now = LocalDateTime.parse("2026-08-31T10:00");
+        ImportantDate existing = new ImportantDate("Team briefing", LocalDate.parse("2026-09-01"),
+                LocalTime.of(9, 30), LocalTime.of(10, 30), null, 0);
+        expectImportantDateValidationFailure(new ImportantDate("TEAM BRIEFING", LocalDate.parse("2026-09-02"), LocalTime.of(9, 30), null, 0),
+                List.of(existing), null, now, "Duplicate event names must be rejected regardless of case.");
+        expectImportantDateValidationFailure(new ImportantDate("Planning", LocalDate.parse("2026-08-31"), LocalTime.of(9, 59), null, 0),
+                List.of(existing), null, now, "Events in the past must be rejected.");
+        expectImportantDateValidationFailure(new ImportantDate("Planning", LocalDate.parse("2026-09-01"),
+                        LocalTime.of(10, 0), LocalTime.of(11, 0), null, 0),
+                List.of(existing), null, now, "Overlapping events must be rejected.");
+        ImportantDateValidator.validate(new ImportantDate("Handover", LocalDate.parse("2026-09-01"),
+                LocalTime.of(10, 30), LocalTime.of(11, 0), null, 0), List.of(existing), null, now);
+        try {
+            new ImportantDate("Invalid", LocalDate.parse("2026-09-01"), LocalTime.of(10, 30),
+                    LocalTime.of(10, 30), null, 0);
+            throw new AssertionError("Events must end after they start.");
+        } catch (IllegalArgumentException expected) {
+            // Expected: zero-duration events are not allowed.
+        }
+        ImportantDateValidator.validate(existing, List.of(existing), existing, now);
+    }
+
+    private static void verifiesPastImportantDatesAreRemovedAfterTheyEnd() {
+        Workspace workspace = new Workspace();
+        ImportantDate finished = new ImportantDate("Finished", LocalDate.parse("2026-08-31"),
+                LocalTime.of(9, 0), LocalTime.of(10, 0), null, 0);
+        ImportantDate ongoing = new ImportantDate("Ongoing", LocalDate.parse("2026-08-31"),
+                LocalTime.of(10, 0), LocalTime.of(11, 0), null, 0);
+        workspace.importantDates().addAll(List.of(finished, ongoing));
+        if (!workspace.removePastImportantDates(LocalDateTime.parse("2026-08-31T10:00"))
+                || !workspace.importantDates().equals(List.of(ongoing))) {
+            throw new AssertionError("Events must be removed once their end time has passed.");
+        }
+    }
+
+    private static void expectImportantDateValidationFailure(ImportantDate candidate, List<ImportantDate> existing,
+                                                              ImportantDate edited, LocalDateTime now, String message) {
+        try {
+            ImportantDateValidator.validate(candidate, existing, edited, now);
+            throw new AssertionError(message);
+        } catch (IllegalArgumentException expected) {
+            // Expected: the scheduling rule prevented an invalid event.
         }
     }
 }
