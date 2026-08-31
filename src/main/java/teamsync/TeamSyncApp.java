@@ -90,10 +90,11 @@ public final class TeamSyncApp extends Application {
     private final TextField importantDateNameField = new TextField();
     private final DatePicker importantDatePicker = new DatePicker();
     private final TextField importantDateTimeField = new TextField();
+    private final TextField importantDateEndTimeField = new TextField();
     private final CheckBox reminderToggle = new CheckBox("Remind me");
     private final ComboBox<ReminderOption> reminderOptionBox = new ComboBox<>();
     private final Spinner<Integer> customReminderSpinner = new Spinner<>();
-    private final Label customReminderLabel = new Label("minutes before");
+    private final Label customReminderLabel = new Label("hours before");
     private final TableView<ImportantDate> importantDatesTable = new TableView<>();
 
     private final StackPane content = new StackPane();
@@ -116,6 +117,7 @@ public final class TeamSyncApp extends Application {
 
         duties.setAll(workspace.duties());
         importantDates.setAll(workspace.importantDates());
+        removePastImportantDates(LocalDateTime.now());
         refreshWorkspaceDetails();
         reminderChecker.setCycleCount(Timeline.INDEFINITE);
         reminderChecker.play();
@@ -307,7 +309,8 @@ public final class TeamSyncApp extends Application {
         clearImportantDateFields();
 
         importantDateNameField.setPromptText("e.g. Equipment briefing");
-        importantDateTimeField.setPromptText("HH:mm");
+        importantDateTimeField.setPromptText("HH:mm (24-hour time)");
+        importantDateEndTimeField.setPromptText("End: HH:mm");
         HBox.setHgrow(importantDateNameField, Priority.ALWAYS);
         Button add = new Button("Add event");
         add.getStyleClass().add("primary-button");
@@ -319,16 +322,19 @@ public final class TeamSyncApp extends Application {
         delete.getStyleClass().add("danger-button");
         delete.setOnAction(event -> deleteImportantDate());
 
-        HBox eventFields = styledBox("form-row", 12, importantDateNameField, importantDatePicker, importantDateTimeField, add);
+        HBox eventFields = styledBox("form-row", 12, importantDateNameField, importantDatePicker,
+                importantDateTimeField, importantDateEndTimeField, add);
         HBox reminderFields = styledBox("form-row", 12, reminderToggle, reminderOptionBox, customReminderSpinner, customReminderLabel);
-        Label reminderHint = new Label("Reminders appear while TeamSync is open. Choose a standard lead time or set your own number of minutes.");
+        Label timeHint = new Label("Use 24-hour time in HH:mm format, for example 09:30 or 14:00. Events must end after they start.");
+        timeHint.getStyleClass().add("help-text");
+        Label reminderHint = new Label("Reminders appear while TeamSync is open. Choose a standard lead time or set your own number of hours.");
         reminderHint.setWrapText(true);
         reminderHint.getStyleClass().add("help-text");
         HBox actions = styledBox("action-row", 10, update, delete);
         VBox tableSection = new VBox(12, importantDatesTable, actions);
         VBox.setVgrow(importantDatesTable, Priority.ALWAYS);
         VBox body = new VBox(18,
-                sectionCard("Add an important date", eventFields, "Reminder", reminderFields, reminderHint),
+                sectionCard("Add an important date", eventFields, timeHint, "Reminder", reminderFields, reminderHint),
                 sectionCard("Saved events", tableSection));
         VBox.setVgrow(tableSection, Priority.ALWAYS);
         content.getChildren().setAll(pageContent(body));
@@ -400,12 +406,16 @@ public final class TeamSyncApp extends Application {
 
     private void configureImportantDatesTable() {
         if (!importantDatesTable.getColumns().isEmpty()) return;
-        reminderOptionBox.setItems(FXCollections.observableArrayList(ReminderOption.values()));
+        reminderOptionBox.setItems(FXCollections.observableArrayList(
+                ReminderOption.AT_EVENT_TIME, ReminderOption.ONE_HOUR_BEFORE,
+                ReminderOption.ONE_DAY_BEFORE, ReminderOption.CUSTOM));
         reminderOptionBox.setValue(ReminderOption.AT_EVENT_TIME);
-        customReminderSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 43_200, 30));
+        customReminderSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 720, 1));
         customReminderSpinner.setEditable(true);
         importantDateTimeField.setPrefWidth(105);
         importantDateTimeField.setMaxWidth(105);
+        importantDateEndTimeField.setPrefWidth(105);
+        importantDateEndTimeField.setMaxWidth(105);
         customReminderSpinner.setPrefWidth(125);
         customReminderLabel.setVisible(false);
         customReminderLabel.setManaged(false);
@@ -421,12 +431,14 @@ public final class TeamSyncApp extends Application {
         TableColumn<ImportantDate, String> date = new TableColumn<>("Date");
         date.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(
                 cell.getValue().date().format(DateTimeFormatter.ofPattern("EEE, d MMM uuuu"))));
-        TableColumn<ImportantDate, String> time = new TableColumn<>("Time");
+        TableColumn<ImportantDate, String> time = new TableColumn<>("Start");
         time.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().time().format(TIME_FORMATTER)));
+        TableColumn<ImportantDate, String> endTime = new TableColumn<>("End");
+        endTime.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().endTime().format(TIME_FORMATTER)));
         TableColumn<ImportantDate, String> reminder = new TableColumn<>("Reminder");
         reminder.setCellValueFactory(cell -> new javafx.beans.property.SimpleStringProperty(cell.getValue().reminderLabel()));
         reminder.setCellFactory(column -> wrappingCell());
-        importantDatesTable.getColumns().setAll(List.of(name, date, time, reminder));
+        importantDatesTable.getColumns().setAll(List.of(name, date, time, endTime, reminder));
         importantDatesTable.setItems(importantDates);
         importantDatesTable.setPlaceholder(new Label("No important dates yet. Add the first event above."));
         importantDatesTable.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_NEXT_COLUMN);
@@ -449,10 +461,11 @@ public final class TeamSyncApp extends Application {
         importantDateNameField.setText(event.name());
         importantDatePicker.setValue(event.date());
         importantDateTimeField.setText(event.time().format(TIME_FORMATTER));
+        importantDateEndTimeField.setText(event.endTime().format(TIME_FORMATTER));
         reminderToggle.setSelected(event.hasReminder());
         reminderOptionBox.setValue(event.hasReminder() ? event.reminderOption() : ReminderOption.AT_EVENT_TIME);
         if (event.reminderOption() == ReminderOption.CUSTOM) {
-            customReminderSpinner.getValueFactory().setValue(event.customReminderMinutes());
+            customReminderSpinner.getValueFactory().setValue(Math.max(1, event.customReminderHours()));
         }
         updateReminderFields();
     }
@@ -562,7 +575,9 @@ public final class TeamSyncApp extends Application {
 
     private void addImportantDate() {
         try {
-            workspace.importantDates().add(eventFromFields());
+            ImportantDate event = eventFromFields();
+            ImportantDateValidator.validate(event, workspace.importantDates(), null, LocalDateTime.now());
+            workspace.importantDates().add(event);
             sortImportantDates();
             clearImportantDateFields();
             saveWorkspace();
@@ -574,7 +589,9 @@ public final class TeamSyncApp extends Application {
         if (selected == null) { showError("Select an event first."); return; }
         try {
             ImportantDate updated = eventFromFields();
-            selected.update(updated.name(), updated.date(), updated.time(), updated.reminderOption(), updated.customReminderMinutes());
+            ImportantDateValidator.validate(updated, workspace.importantDates(), selected, LocalDateTime.now());
+            selected.update(updated.name(), updated.date(), updated.time(), updated.endTime(),
+                    updated.reminderOption(), updated.customReminderMinutes());
             sortImportantDates();
             clearImportantDateFields();
             saveWorkspace();
@@ -592,14 +609,16 @@ public final class TeamSyncApp extends Application {
 
     private ImportantDate eventFromFields() {
         LocalTime time;
+        LocalTime endTime;
         try {
             time = LocalTime.parse(importantDateTimeField.getText().trim(), TIME_FORMATTER);
+            endTime = LocalTime.parse(importantDateEndTimeField.getText().trim(), TIME_FORMATTER);
         } catch (java.time.format.DateTimeParseException error) {
-            throw new IllegalArgumentException("Enter the time in 24-hour HH:mm format, for example 09:30.");
+            throw new IllegalArgumentException("Enter start and end times in 24-hour HH:mm format, for example 09:30 and 10:30.");
         }
         ReminderOption option = reminderToggle.isSelected() ? reminderOptionBox.getValue() : null;
-        return new ImportantDate(importantDateNameField.getText(), importantDatePicker.getValue(), time, option,
-                customReminderSpinner.getValue());
+        return new ImportantDate(importantDateNameField.getText(), importantDatePicker.getValue(), time, endTime, option,
+                Math.multiplyExact(customReminderSpinner.getValue(), 60));
     }
 
     private void sortImportantDates() {
@@ -670,7 +689,7 @@ public final class TeamSyncApp extends Application {
 
     private VBox upcomingDatesSummary() {
         List<ImportantDate> upcoming = workspace.importantDates().stream()
-                .filter(event -> !event.occursAt().isBefore(LocalDateTime.now()))
+                .filter(event -> event.endsAt().isAfter(LocalDateTime.now()))
                 .sorted(java.util.Comparator.comparing(ImportantDate::occursAt))
                 .limit(3)
                 .toList();
@@ -685,7 +704,7 @@ public final class TeamSyncApp extends Application {
             Label name = new Label(event.name());
             name.getStyleClass().add("upcoming-event-name");
             Label details = new Label(event.date().format(DateTimeFormatter.ofPattern("EEE, d MMM")) + " · "
-                    + event.time().format(TIME_FORMATTER));
+                    + event.time().format(TIME_FORMATTER) + "–" + event.endTime().format(TIME_FORMATTER));
             details.getStyleClass().add("upcoming-event-details");
             VBox eventText = new VBox(2, name, details);
             HBox.setHgrow(eventText, Priority.ALWAYS);
@@ -698,6 +717,7 @@ public final class TeamSyncApp extends Application {
 
     private void checkReminders() {
         LocalDateTime now = LocalDateTime.now();
+        removePastImportantDates(now);
         for (ImportantDate event : workspace.importantDates()) {
             if (!event.hasReminder()) continue;
             LocalDateTime reminderAt = event.occursAt().minusMinutes(event.reminderMinutesBefore());
@@ -711,6 +731,12 @@ public final class TeamSyncApp extends Application {
                 alert.show();
             }
         }
+    }
+
+    private void removePastImportantDates(LocalDateTime now) {
+        if (!workspace.removePastImportantDates(now)) return;
+        importantDates.setAll(workspace.importantDates());
+        saveWorkspace();
     }
 
     private String attendanceSummary() { return workspace.attendance().isEmpty() ? "No attendance loaded yet." : attendingCount() + " attending member(s) for " + workspace.sessionDate() + "."; }
@@ -892,11 +918,14 @@ public final class TeamSyncApp extends Application {
 
     private void clearImportantDateFields() {
         importantDateNameField.clear();
-        importantDatePicker.setValue(LocalDate.now());
-        importantDateTimeField.setText(LocalTime.now().withSecond(0).withNano(0).format(TIME_FORMATTER));
+        LocalDateTime defaultStart = LocalDateTime.now().withSecond(0).withNano(0);
+        if (!defaultStart.toLocalTime().isBefore(LocalTime.of(23, 0))) defaultStart = defaultStart.plusDays(1).withHour(0).withMinute(0);
+        importantDatePicker.setValue(defaultStart.toLocalDate());
+        importantDateTimeField.setText(defaultStart.toLocalTime().format(TIME_FORMATTER));
+        importantDateEndTimeField.setText(defaultStart.toLocalTime().plusHours(1).format(TIME_FORMATTER));
         reminderToggle.setSelected(false);
         reminderOptionBox.setValue(ReminderOption.AT_EVENT_TIME);
-        customReminderSpinner.getValueFactory().setValue(30);
+        customReminderSpinner.getValueFactory().setValue(1);
         importantDatesTable.getSelectionModel().clearSelection();
         updateReminderFields();
     }
