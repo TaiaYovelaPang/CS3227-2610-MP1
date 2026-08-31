@@ -10,7 +10,7 @@ TeamSync is supplied as `teamsync.jar` in the project's `release` folder. The JA
    java -version
    ```
 
-2. Download `teamsync.jar` from the `release` folder and copy it to the folder you want to use as the TeamSync home folder.
+2. Download `teamsync.jar` from the `release` folder or from [here] (https://github.com/TaiaYovelaPang/CS3227-2610-MP1/releases/tag/v1.0) and copy it to the folder you want to use as the TeamSync home folder.
 3. Open a command terminal and change into that folder:
 
    ```bash
