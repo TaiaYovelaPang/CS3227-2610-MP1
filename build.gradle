@@ -32,6 +32,26 @@ dependencies {
 
 application { mainClass = 'teamsync.TeamSyncLauncher' }
 
+tasks.register('releaseJar', Jar) {
+    group = 'distribution'
+    description = 'Builds a self-contained, platform-specific TeamSync executable JAR in release/.'
+    archiveFileName = 'teamsync.jar'
+    destinationDirectory = layout.projectDirectory.dir('release')
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest { attributes 'Main-Class': application.mainClass.get() }
+
+    dependsOn tasks.named('classes')
+    from sourceSets.main.output
+    from {
+        configurations.runtimeClasspath.collect { dependency ->
+            dependency.directory ? dependency : zipTree(dependency)
+        }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
 def java25 = javaToolchains.launcherFor {
     languageVersion = JavaLanguageVersion.of(25)
 }
