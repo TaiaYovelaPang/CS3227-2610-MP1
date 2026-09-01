@@ -81,6 +81,8 @@ Under **Attendance statistics**, select any date in the month you want to report
 
 Late and early-leaving members count as attended in monthly attendance percentages.
 
+Exporting attendance statistics for the month will include sessions indicated in the sheets, even if that session have not yet passed. 
+
 ### Duties
 
 Open **Duties** to define the jobs required for a training session.
