@@ -2,7 +2,7 @@
 
 ## Quick start
 
-TeamSync is supplied as `teamsync.jar` in the project's `release` folder. The JAR bundles TeamSync and its JavaFX runtime dependencies, so only Java 25 is required to run it.
+TeamSync is supplied as `teamsync.jar` in the project's `release` folder. This single JAR includes TeamSync and the JavaFX runtimes for supported Windows, macOS, and Linux computers, so only Java 25 is required to run it.
 
 1. Install a Java Development Kit (JDK) 25. Confirm the installed version with:
 
@@ -20,12 +20,10 @@ TeamSync is supplied as `teamsync.jar` in the project's `release` folder. The JA
 4. Start TeamSync:
 
    ```bash
-   java --enable-native-access=ALL-UNNAMED -jar teamsync.jar
+   java -jar teamsync.jar
    ```
 
-The `--enable-native-access=ALL-UNNAMED` option lets JavaFX load its bundled native libraries without displaying a Java 25 warning.
-
-Release JARs are platform-specific because JavaFX includes native libraries. Use a JAR built for your operating system and processor architecture. The included `release/teamsync.jar` is built on the current platform; to create a release JAR on another platform, run `./gradlew releaseJar` from a TeamSync source checkout. Linux users also require GTK 3.20 or later.
+The bootstrap automatically selects and launches the runtime for Windows x64, macOS x64 or ARM64, or Linux x64 or ARM64. Linux users also require GTK 3.20 or later. Windows ARM users must install an x64 Java 25 runtime because JavaFX 25 does not provide a native Windows ARM runtime.
 
 Upon first loading of the application, you will see this initial state. 
 ![Initial state.png](../images/Initial%20state.png)

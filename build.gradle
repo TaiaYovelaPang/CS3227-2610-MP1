@@ -32,22 +32,62 @@ dependencies {
 
 application { mainClass = 'teamsync.TeamSyncLauncher' }
 
+def releasePlatforms = [
+        'windows-x64'  : 'win',
+        'macos-x64'    : 'mac',
+        'macos-aarch64': 'mac-aarch64',
+        'linux-x64'    : 'linux',
+        'linux-aarch64': 'linux-aarch64'
+]
+
+def platformJarTasks = releasePlatforms.collectEntries { platformName, classifier ->
+    def capitalisedName = platformName.split('-').collect { it.capitalize() }.join('')
+    def configurationName = "javafx${capitalisedName}"
+    def platformConfiguration = configurations.create(configurationName) {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+    ['base', 'graphics', 'controls', 'swing'].each { moduleName ->
+        dependencies.add(configurationName,
+                "org.openjfx:javafx-${moduleName}:${javafxVersion}:${classifier}")
+    }
+
+    def platformJar = tasks.register("${platformName}RuntimeJar", Jar) {
+        archiveFileName = "${platformName}.jar"
+        destinationDirectory = layout.buildDirectory.dir('teamsync-platforms')
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        manifest { attributes 'Main-Class': application.mainClass.get() }
+
+        dependsOn tasks.named('classes')
+        from sourceSets.main.output
+        from {
+            platformConfiguration.collect { dependency ->
+                dependency.directory ? dependency : zipTree(dependency)
+            }
+        }
+        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+        preserveFileTimestamps = false
+        reproducibleFileOrder = true
+    }
+    [(platformName): platformJar]
+}
+
 tasks.register('releaseJar', Jar) {
     group = 'distribution'
-    description = 'Builds a self-contained, platform-specific TeamSync executable JAR in release/.'
+    description = 'Builds one self-contained TeamSync bootstrap JAR for all supported platforms.'
     archiveFileName = 'teamsync.jar'
     destinationDirectory = layout.projectDirectory.dir('release')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest { attributes 'Main-Class': application.mainClass.get() }
+    manifest { attributes 'Main-Class': 'teamsync.TeamSyncBootstrap' }
 
-    dependsOn tasks.named('classes')
-    from sourceSets.main.output
-    from {
-        configurations.runtimeClasspath.collect { dependency ->
-            dependency.directory ? dependency : zipTree(dependency)
-        }
+    dependsOn platformJarTasks.values()
+    from(sourceSets.main.output) {
+        include 'teamsync/TeamSyncBootstrap.class'
     }
-    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+    from(platformJarTasks.values()) {
+        into 'META-INF/teamsync/platforms'
+    }
     preserveFileTimestamps = false
     reproducibleFileOrder = true
 }
