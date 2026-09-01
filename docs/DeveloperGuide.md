@@ -508,7 +508,8 @@ Priorities: High (must have) — `***`; Medium (nice to have) — `**`; Low (unl
 
 #### Compatibility
 
-- TeamSync requires a Java runtime compatible with Java 25 and JavaFX 25. The Gradle wrapper provisions the configured toolchain and platform-specific JavaFX libraries on supported macOS, Windows, and Linux systems.
+- TeamSync requires a Java runtime compatible with Java 25 and JavaFX 25. The `releaseJar` task packages platform-specific JavaFX runtimes inside one bootstrap JAR for Windows x64, macOS x64/ARM64, and Linux x64/ARM64. The bootstrap detects the current platform, extracts the matching runtime to a temporary file, and launches it automatically.
+- Windows ARM users must use an x64 Java 25 runtime because JavaFX 25 does not publish a native Windows ARM runtime.
 - On Linux, JavaFX requires GTK 3.20 or later.
 - Attendance input must be a publicly accessible Google Sheet whose first column is `Member` and whose session headers use ISO dates (`YYYY-MM-DD`). TeamSync accepts attendance values `1`, `0`, `L`, and `E` (plus the supported textual aliases).
 - The local workspace is Java-serialized and is intended for the same user's TeamSync installation; it is not a shared, concurrent multi-user store.

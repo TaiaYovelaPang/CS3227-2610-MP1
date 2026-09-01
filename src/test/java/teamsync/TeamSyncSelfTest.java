@@ -23,10 +23,27 @@ public final class TeamSyncSelfTest {
         verifiesImportantDateSchedulingValidation();
         verifiesPastImportantDatesAreRemovedAfterTheyEnd();
         verifiesDefaultWorkspaceLinksExampleSheet();
+        verifiesBootstrapPlatformSelection();
         verifiesSingleDutyBeforeRepeats();
         verifiesDutiesCanIncludeLateAndEarlyLeavingMembers();
         verifiesDuplicateDutyNamesAreRejectedIgnoringCase();
         System.out.println("TeamSync self-test passed.");
+    }
+
+    private static void verifiesBootstrapPlatformSelection() {
+        if (!TeamSyncBootstrap.detectPlatform("Windows 11", "amd64").equals("windows-x64")
+                || !TeamSyncBootstrap.detectPlatform("Mac OS X", "aarch64").equals("macos-aarch64")
+                || !TeamSyncBootstrap.detectPlatform("Mac OS X", "x86_64").equals("macos-x64")
+                || !TeamSyncBootstrap.detectPlatform("Linux", "aarch64").equals("linux-aarch64")
+                || !TeamSyncBootstrap.detectPlatform("Linux", "amd64").equals("linux-x64")) {
+            throw new AssertionError("The bootstrap must select the matching bundled runtime.");
+        }
+        try {
+            TeamSyncBootstrap.detectPlatform("Windows 11", "aarch64");
+            throw new AssertionError("Windows ARM must explain that an x64 Java runtime is required.");
+        } catch (IllegalStateException expected) {
+            // Expected: JavaFX 25 does not publish a native Windows ARM runtime.
+        }
     }
 
     private static void verifiesAttendanceCodesAreParsed() {
